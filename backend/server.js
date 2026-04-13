@@ -45,6 +45,7 @@ app.use('/api/uploads',    require('./routes/uploads'));
 app.use('/api/analytics',  require('./routes/analytics'));
 app.use('/api/activity',   require('./routes/activity'));
 app.use('/api/reports',    require('./routes/reports'));
+app.use('/api/qa-agent',   require('./routes/qaAgent'));
 
 // Global error handler
 app.use((err, req, res, next) => {

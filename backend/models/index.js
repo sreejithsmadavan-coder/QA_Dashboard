@@ -117,6 +117,43 @@ const SprintData = sequelize.define('SprintData', {
   trend:     { type: DataTypes.JSON, defaultValue: [] },
 }, { tableName: 'sprint_data', timestamps: true });
 
+// ── QAAgentConfig (per-user current state for the QA Agent module) ───────────
+const QAAgentConfig = sequelize.define('QAAgentConfig', {
+  id:        { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  userId:    { type: DataTypes.INTEGER, allowNull: false, unique: true, references: { model: 'users', key: 'id' } },
+  provider:  { type: DataTypes.STRING, defaultValue: 'groq' },
+  model:     { type: DataTypes.STRING },
+  apiKey:    { type: DataTypes.TEXT },
+  url:       { type: DataTypes.STRING },
+  siteType:  { type: DataTypes.STRING },
+  categories:{ type: DataTypes.JSON },
+  notes:     { type: DataTypes.TEXT },
+  emailAddr: { type: DataTypes.STRING },
+  state:     { type: DataTypes.JSON },
+}, { tableName: 'qa_agent_configs', timestamps: true });
+
+// ── QAAgentRun (one row per executed run) ────────────────────────────────────
+const QAAgentRun = sequelize.define('QAAgentRun', {
+  id:        { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  userId:    { type: DataTypes.INTEGER, allowNull: false, references: { model: 'users', key: 'id' } },
+  projectId: { type: DataTypes.INTEGER, references: { model: 'projects', key: 'id' } },
+  url:       { type: DataTypes.STRING },
+  provider:  { type: DataTypes.STRING },
+  model:     { type: DataTypes.STRING },
+  categories:{ type: DataTypes.JSON },
+  status:    { type: DataTypes.STRING, defaultValue: 'completed' },
+  totalTests:{ type: DataTypes.INTEGER, defaultValue: 0 },
+  passCount: { type: DataTypes.INTEGER, defaultValue: 0 },
+  failCount: { type: DataTypes.INTEGER, defaultValue: 0 },
+  blockedCount: { type: DataTypes.INTEGER, defaultValue: 0 },
+  passRate:  { type: DataTypes.FLOAT, defaultValue: 0 },
+  durationMs:{ type: DataTypes.INTEGER },
+  results:   { type: DataTypes.JSON },
+  bugs:      { type: DataTypes.JSON },
+  testCases: { type: DataTypes.JSON },
+  reportHtml:{ type: DataTypes.TEXT },
+}, { tableName: 'qa_agent_runs', timestamps: true });
+
 // ── Associations ──────────────────────────────────────────────────────────────
 Project.hasMany(Bug, { foreignKey: 'projectId', as: 'bugs', onDelete: 'CASCADE' });
 Bug.belongsTo(Project, { foreignKey: 'projectId', as: 'project' });
@@ -133,6 +170,14 @@ TestExecution.belongsTo(TestCase, { foreignKey: 'testCaseId', as: 'testCase' });
 Project.hasMany(SprintData, { foreignKey: 'projectId', as: 'sprints', onDelete: 'CASCADE' });
 SprintData.belongsTo(Project, { foreignKey: 'projectId', as: 'project' });
 
+User.hasOne(QAAgentConfig, { foreignKey: 'userId', as: 'qaAgentConfig', onDelete: 'CASCADE' });
+QAAgentConfig.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
+User.hasMany(QAAgentRun, { foreignKey: 'userId', as: 'qaAgentRuns', onDelete: 'CASCADE' });
+QAAgentRun.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+Project.hasMany(QAAgentRun, { foreignKey: 'projectId', as: 'qaAgentRuns', onDelete: 'SET NULL' });
+QAAgentRun.belongsTo(Project, { foreignKey: 'projectId', as: 'project' });
+
 module.exports = {
   sequelize,
   User,
@@ -143,4 +188,6 @@ module.exports = {
   Meeting,
   ActivityLog,
   SprintData,
+  QAAgentConfig,
+  QAAgentRun,
 };

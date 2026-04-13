@@ -12,12 +12,14 @@ import ProjectInnerPage from './pages/ProjectInnerPage';
 import MeetingsPage from './pages/MeetingsPage';
 import ProfilePage from './pages/ProfilePage';
 import SettingsPage from './pages/SettingsPage';
+import QAAgentPage from './pages/QAAgentPage';
 import { getActivityFeed } from './api/client';
 import useSocket from './hooks/useSocket';
 
 const PAGE_TITLES = {
   dashboard: 'Dashboard Overview',
   projects: 'Projects',
+  'qa-agent': 'QA Agent',
   meetings: 'Meetings',
   settings: 'Settings',
   profile: 'Profile',
@@ -25,6 +27,7 @@ const PAGE_TITLES = {
 const PAGE_SUBS = {
   dashboard: 'Monitor your QA metrics and project health',
   projects: 'Manage and monitor all your QA projects',
+  'qa-agent': 'AI-powered test generation, execution & reporting',
   meetings: 'Schedule and manage your QA team meetings',
   settings: 'Manage your account and preferences',
   profile: 'Manage your personal information',
@@ -150,6 +153,8 @@ function AppContent() {
         initialFilter={projFilter}
       />
     );
+  } else if (page === 'qa-agent') {
+    mainContent = <QAAgentPage theme={theme} toast={toast} />;
   } else if (page === 'meetings') {
     mainContent = <MeetingsPage toast={toast} />;
   } else if (page === 'profile') {

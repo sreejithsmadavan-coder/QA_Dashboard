@@ -3,6 +3,7 @@ import React from 'react';
 const NAV = [
   { k: 'dashboard', ic: '◈', l: 'Dashboard Overview' },
   { k: 'projects',  ic: '◉', l: 'Projects' },
+  { k: 'qa-agent',  ic: '🤖', l: 'QA Agent' },
   { k: 'meetings',  ic: '📅', l: 'Meetings' },
 ];
 

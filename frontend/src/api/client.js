@@ -81,4 +81,14 @@ export const previewFile = (formData) => api.post('/uploads/preview', formData, 
   headers: { 'Content-Type': 'multipart/form-data' },
 });
 
+// QA Agent
+export const getQAAgentConfig = () => api.get('/qa-agent/config');
+export const saveQAAgentConfig = (data) => api.put('/qa-agent/config', data);
+export const clearQAAgentConfig = () => api.delete('/qa-agent/config');
+export const listQAAgentRuns = (params) => api.get('/qa-agent/runs', { params });
+export const getQAAgentRun = (id) => api.get(`/qa-agent/runs/${id}`);
+export const createQAAgentRun = (data) => api.post('/qa-agent/runs', data);
+export const deleteQAAgentRun = (id) => api.delete(`/qa-agent/runs/${id}`);
+export const clearQAAgentRuns = () => api.delete('/qa-agent/runs');
+
 export default api;
