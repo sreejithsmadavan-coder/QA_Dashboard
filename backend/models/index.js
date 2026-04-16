@@ -17,6 +17,8 @@ const User = sequelize.define('User', {
   linkedin:   { type: DataTypes.STRING },
   avatar:     { type: DataTypes.TEXT },
   isActive:   { type: DataTypes.BOOLEAN, defaultValue: true },
+  resetOtp:       { type: DataTypes.STRING },
+  resetOtpExpiry: { type: DataTypes.BIGINT },
 }, { tableName: 'users', timestamps: true });
 
 // ── Project ───────────────────────────────────────────────────────────────────
@@ -154,6 +156,93 @@ const QAAgentRun = sequelize.define('QAAgentRun', {
   reportHtml:{ type: DataTypes.TEXT },
 }, { tableName: 'qa_agent_runs', timestamps: true });
 
+// ── ChatMessage ──────────────────────────────────────────────────────────────
+const ChatMessage = sequelize.define('ChatMessage', {
+  id:        { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  userId:    { type: DataTypes.INTEGER, allowNull: false, references: { model: 'users', key: 'id' } },
+  sessionId: { type: DataTypes.STRING, allowNull: false, defaultValue: 'default' },
+  role:      { type: DataTypes.STRING, allowNull: false }, // 'user' or 'bot'
+  text:      { type: DataTypes.TEXT, allowNull: false },
+  source:    { type: DataTypes.STRING, defaultValue: 'user' }, // 'user', 'ai', 'fallback'
+}, { tableName: 'chat_messages', timestamps: true });
+
+// ── Notification ─────────────────────────────────────────────────────────────
+const Notification = sequelize.define('Notification', {
+  id:         { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  userId:     { type: DataTypes.INTEGER, allowNull: false, references: { model: 'users', key: 'id' } },
+  type:       { type: DataTypes.STRING, allowNull: false }, // 'bug_assigned', 'test_failed', etc.
+  title:      { type: DataTypes.STRING, allowNull: false },
+  message:    { type: DataTypes.TEXT, allowNull: false },
+  icon:       { type: DataTypes.STRING, defaultValue: '●' },
+  iconColor:  { type: DataTypes.STRING, defaultValue: 'var(--lime)' },
+  read:       { type: DataTypes.BOOLEAN, defaultValue: false },
+  link:       { type: DataTypes.STRING },
+  entityType: { type: DataTypes.STRING },
+  entityId:   { type: DataTypes.INTEGER },
+  metadata:   { type: DataTypes.JSON },
+}, { tableName: 'notifications', timestamps: true });
+
+// ── AuditLog ─────────────────────────────────────────────────────────────────
+const AuditLog = sequelize.define('AuditLog', {
+  id:         { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  userId:     { type: DataTypes.INTEGER, references: { model: 'users', key: 'id' } },
+  userName:   { type: DataTypes.STRING },
+  action:     { type: DataTypes.STRING, allowNull: false }, // 'create', 'update', 'delete'
+  entityType: { type: DataTypes.STRING, allowNull: false },
+  entityId:   { type: DataTypes.INTEGER },
+  entityName: { type: DataTypes.STRING },
+  changes:    { type: DataTypes.JSON },
+  ipAddress:  { type: DataTypes.STRING },
+  userAgent:  { type: DataTypes.STRING },
+}, { tableName: 'audit_logs_v2', timestamps: true });
+
+// ── ScheduledReport ──────────────────────────────────────────────────────────
+const ScheduledReport = sequelize.define('ScheduledReport', {
+  id:         { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  userId:     { type: DataTypes.INTEGER, allowNull: false, references: { model: 'users', key: 'id' } },
+  reportType: { type: DataTypes.STRING, allowNull: false },
+  frequency:  { type: DataTypes.STRING, allowNull: false }, // daily, weekly, monthly
+  emailTo:    { type: DataTypes.STRING, allowNull: false },
+  projectId:  { type: DataTypes.INTEGER, allowNull: false, references: { model: 'projects', key: 'id' } },
+  lastSentAt: { type: DataTypes.DATE },
+  isActive:   { type: DataTypes.BOOLEAN, defaultValue: true },
+}, { tableName: 'scheduled_reports', timestamps: true });
+
+// ── CICDApiKey ───────────────────────────────────────────────────────────────
+const CICDApiKey = sequelize.define('CICDApiKey', {
+  id:         { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  userId:     { type: DataTypes.INTEGER, allowNull: false, references: { model: 'users', key: 'id' } },
+  key:        { type: DataTypes.STRING, allowNull: false, unique: true },
+  name:       { type: DataTypes.STRING, defaultValue: 'Unnamed Key' },
+  lastUsedAt: { type: DataTypes.DATE },
+  isActive:   { type: DataTypes.BOOLEAN, defaultValue: true },
+}, { tableName: 'cicd_api_keys', timestamps: true });
+
+// ── Tag ──────────────────────────────────────────────────────────────────────
+const Tag = sequelize.define('Tag', {
+  id:    { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  name:  { type: DataTypes.STRING, allowNull: false, unique: true },
+  color: { type: DataTypes.STRING, defaultValue: '#6366f1' },
+}, { tableName: 'tags', timestamps: true });
+
+// ── TestCaseTag (junction) ───────────────────────────────────────────────────
+const TestCaseTag = sequelize.define('TestCaseTag', {
+  id:         { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  testCaseId: { type: DataTypes.INTEGER, allowNull: false, references: { model: 'test_cases', key: 'id' } },
+  tagId:      { type: DataTypes.INTEGER, allowNull: false, references: { model: 'tags', key: 'id' } },
+}, { tableName: 'test_case_tags', timestamps: true });
+
+// ── IntegrationWebhook ───────────────────────────────────────────────────────
+const IntegrationWebhook = sequelize.define('IntegrationWebhook', {
+  id:              { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  userId:          { type: DataTypes.INTEGER, allowNull: false, references: { model: 'users', key: 'id' } },
+  platform:        { type: DataTypes.STRING, allowNull: false }, // 'slack' or 'teams'
+  webhookUrl:      { type: DataTypes.STRING, allowNull: false },
+  events:          { type: DataTypes.TEXT, get() { try { return JSON.parse(this.getDataValue('events') || '[]'); } catch { return []; } }, set(v) { this.setDataValue('events', JSON.stringify(v || [])); } },
+  isActive:        { type: DataTypes.BOOLEAN, defaultValue: true },
+  lastTriggeredAt: { type: DataTypes.DATE },
+}, { tableName: 'integration_webhooks', timestamps: true });
+
 // ── Associations ──────────────────────────────────────────────────────────────
 Project.hasMany(Bug, { foreignKey: 'projectId', as: 'bugs', onDelete: 'CASCADE' });
 Bug.belongsTo(Project, { foreignKey: 'projectId', as: 'project' });
@@ -178,6 +267,35 @@ QAAgentRun.belongsTo(User, { foreignKey: 'userId', as: 'user' });
 Project.hasMany(QAAgentRun, { foreignKey: 'projectId', as: 'qaAgentRuns', onDelete: 'SET NULL' });
 QAAgentRun.belongsTo(Project, { foreignKey: 'projectId', as: 'project' });
 
+User.hasMany(ChatMessage, { foreignKey: 'userId', as: 'chatMessages', onDelete: 'CASCADE' });
+ChatMessage.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
+User.hasMany(Notification, { foreignKey: 'userId', as: 'notifications', onDelete: 'CASCADE' });
+Notification.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
+User.hasMany(AuditLog, { foreignKey: 'userId', as: 'auditLogs', onDelete: 'SET NULL' });
+AuditLog.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
+// ScheduledReport associations
+User.hasMany(ScheduledReport, { foreignKey: 'userId', as: 'scheduledReports', onDelete: 'CASCADE' });
+ScheduledReport.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+Project.hasMany(ScheduledReport, { foreignKey: 'projectId', as: 'scheduledReports', onDelete: 'CASCADE' });
+ScheduledReport.belongsTo(Project, { foreignKey: 'projectId', as: 'project' });
+
+// CICDApiKey associations
+User.hasMany(CICDApiKey, { foreignKey: 'userId', as: 'cicdApiKeys', onDelete: 'CASCADE' });
+CICDApiKey.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
+// Tag / TestCaseTag associations
+Tag.hasMany(TestCaseTag, { foreignKey: 'tagId', as: 'testCaseTags', onDelete: 'CASCADE' });
+TestCaseTag.belongsTo(Tag, { foreignKey: 'tagId', as: 'tag' });
+TestCase.hasMany(TestCaseTag, { foreignKey: 'testCaseId', as: 'testCaseTags', onDelete: 'CASCADE' });
+TestCaseTag.belongsTo(TestCase, { foreignKey: 'testCaseId', as: 'testCase' });
+
+// IntegrationWebhook associations
+User.hasMany(IntegrationWebhook, { foreignKey: 'userId', as: 'integrationWebhooks', onDelete: 'CASCADE' });
+IntegrationWebhook.belongsTo(User, { foreignKey: 'userId', as: 'user' });
+
 module.exports = {
   sequelize,
   User,
@@ -190,4 +308,12 @@ module.exports = {
   SprintData,
   QAAgentConfig,
   QAAgentRun,
+  ChatMessage,
+  Notification,
+  AuditLog,
+  ScheduledReport,
+  CICDApiKey,
+  Tag,
+  TestCaseTag,
+  IntegrationWebhook,
 };

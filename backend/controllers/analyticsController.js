@@ -3,10 +3,10 @@ const { Project, Bug, TestCase, TestExecution, SprintData, ActivityLog } = requi
 exports.getDashboardStats = async (req, res) => {
   try {
     const [projects, bugs, testCases, executions, activities] = await Promise.all([
-      Project.findAll({ include: [{ model: Bug, as: 'bugs', attributes: ['id','severity','status'] }] }),
+      Project.findAll({ attributes: ['id','name','status','health','passRate','testCasesCount'] }),
       Bug.findAll({ attributes: ['id','severity','status','createdAt'] }),
-      TestCase.findAll({ attributes: ['id','category','projectId'] }),
-      TestExecution.findAll({ attributes: ['id','status','sprint','projectId','executedAt'] }),
+      TestCase.findAll({ attributes: ['id','category','projectId','testResult'] }),
+      TestExecution.findAll({ attributes: ['id','status','sprint','projectId','executedAt'], limit: 500 }),
       ActivityLog.findAll({ order: [['createdAt','DESC']], limit: 10 }),
     ]);
 

@@ -92,7 +92,7 @@ async function watchCycle(io) {
   }
 }
 
-function startDBWatcher(io, intervalMs = 5000) {
+function startDBWatcher(io, intervalMs = 30000) {
   // Run first cycle immediately to set baseline snapshot
   watchCycle(io).then(() => {
     // Then poll every 5 seconds
