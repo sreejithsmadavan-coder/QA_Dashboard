@@ -13,6 +13,7 @@ import MeetingsPage from './pages/MeetingsPage';
 import ProfilePage from './pages/ProfilePage';
 import SettingsPage from './pages/SettingsPage';
 import QAAgentPage from './pages/QAAgentPage';
+import ChatBotIcon from './components/ui/ChatBotIcon';
 import { getActivityFeed } from './api/client';
 import useSocket from './hooks/useSocket';
 
@@ -196,6 +197,7 @@ function AppContent() {
         </div>
       </div>
 
+      <ChatBotIcon />
       <Toasts items={toasts} remove={removeToast} />
 
       {showLogoutConfirm && (
