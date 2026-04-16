@@ -31,6 +31,9 @@ export const register = (data) => api.post('/auth/register', data);
 export const getMe = () => api.get('/auth/me');
 export const updateProfile = (data) => api.put('/auth/profile', data);
 export const changePassword = (data) => api.put('/auth/change-password', data);
+export const forgotPassword = (email) => api.post('/auth/forgot-password', { email });
+export const verifyOtp = (email, otp) => api.post('/auth/verify-otp', { email, otp });
+export const resetPassword = (email, otp, newPassword) => api.post('/auth/reset-password', { email, otp, newPassword });
 
 // Projects
 export const getProjects = (params) => api.get('/projects', { params });
@@ -91,5 +94,31 @@ export const createQAAgentRun = (data) => api.post('/qa-agent/runs', data);
 export const deleteQAAgentRun = (id) => api.delete(`/qa-agent/runs/${id}`);
 export const clearQAAgentRuns = () => api.delete('/qa-agent/runs');
 export const crawlQAAgentSite = (data) => api.post('/qa-agent/crawl', data);
+
+// Search
+export const globalSearch = (q) => api.get('/search', { params: { q } });
+
+// Chat Bot
+export const sendChatMessage = (message, history) => api.post('/chat', { message, history }, { timeout: 30000 });
+export const getChatStats = () => api.get('/chat/stats');
+export const getChatDailyDigest = () => api.get('/chat/daily-digest');
+
+// Notifications
+export const getNotifications = (params) => api.get('/chat/notifications', { params });
+export const getUnreadNotifCount = () => api.get('/chat/notifications/unread-count');
+export const markNotifRead = (id) => api.put(`/chat/notifications/${id}/read`);
+
+// Audit Logs
+export const getAuditLogs = (params) => api.get('/chat/audit-logs', { params });
+
+// Flakiness Tracker
+export const getFlakinessData = (projectId) => api.get('/flakiness', { params: { projectId } });
+
+// Integrations (Webhooks)
+export const createWebhook = (data) => api.post('/integrations/webhook', data);
+export const getWebhooks = () => api.get('/integrations/webhooks');
+export const updateWebhook = (id, data) => api.put(`/integrations/webhooks/${id}`, data);
+export const deleteWebhook = (id) => api.delete(`/integrations/webhooks/${id}`);
+export const testWebhook = (id) => api.post(`/integrations/webhooks/${id}/test`);
 
 export default api;
