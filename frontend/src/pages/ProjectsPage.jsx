@@ -160,7 +160,7 @@ function CreateProjectModal({ onClose, onCreate }) {
   );
 }
 
-export default function ProjectsPage({ onViewProject, toast, initialFilter = 'All' }) {
+export default function ProjectsPage({ onViewProject, toast, initialFilter = 'All', autoCreate = false, onAutoCreateDone }) {
   const [projects, setProjects] = useState([]);
   const [filter, setFilter] = useState(initialFilter);
   const [hFilter, setHFilter] = useState('All');
@@ -178,6 +178,14 @@ export default function ProjectsPage({ onViewProject, toast, initialFilter = 'Al
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => { setFilter(initialFilter); }, [initialFilter]);
+
+  // Auto-open create modal when redirected from QA Agent
+  useEffect(() => {
+    if (autoCreate) {
+      setShowCreate(true);
+      onAutoCreateDone?.();
+    }
+  }, [autoCreate, onAutoCreateDone]);
 
   useSocket({
     'project:created': load,
