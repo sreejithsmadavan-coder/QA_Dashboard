@@ -1,5 +1,6 @@
 const { QAAgentConfig, QAAgentRun, ActivityLog } = require('../models');
 const { broadcast } = require('../socket/handlers');
+const cheerio = require('cheerio');
 
 // ── Config (one row per user) ─────────────────────────────────────────────────
 exports.getConfig = async (req, res) => {
@@ -54,7 +55,187 @@ const SITEMAP_LOC_RE = /<loc>\s*([^<\s]+)\s*<\/loc>/gi;
 
 function stripTags(s) { return String(s || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim(); }
 
-async function fetchText(url, timeoutMs = 8000, accept = 'text/html,application/xhtml+xml,application/xml,text/xml') {
+// ── Page structure analysis — extract real elements from HTML ─────────────────
+function analyzePageHtml(html, pageUrl, origin) {
+  try {
+    const $ = cheerio.load(html);
+    const analysis = {};
+
+    // Meta tags
+    const meta = {};
+    meta.title = $('title').first().text().trim().slice(0, 140) || null;
+    meta.description = $('meta[name="description"]').attr('content')?.slice(0, 200) || null;
+    meta.ogTitle = $('meta[property="og:title"]').attr('content')?.slice(0, 140) || null;
+    meta.ogImage = $('meta[property="og:image"]').attr('content')?.slice(0, 200) || null;
+    meta.canonical = $('link[rel="canonical"]').attr('href')?.slice(0, 200) || null;
+    meta.viewport = $('meta[name="viewport"]').attr('content') ? true : null;
+    if (Object.values(meta).some(v => v)) analysis.meta = meta;
+
+    // Headings hierarchy
+    const headings = [];
+    $('h1, h2, h3').each((_, el) => {
+      if (headings.length >= 25) return false;
+      const text = $(el).text().trim().slice(0, 80);
+      if (text) headings.push({ tag: el.tagName.toLowerCase(), text });
+    });
+    if (headings.length) analysis.headings = headings;
+
+    // Forms — the most important signal for test case generation
+    const forms = [];
+    $('form').each((_, form) => {
+      if (forms.length >= 8) return false;
+      const $f = $(form);
+      const fields = [];
+      $f.find('input, select, textarea').each((_, inp) => {
+        if (fields.length >= 20) return false;
+        const $i = $(inp);
+        const type = $i.attr('type') || '';
+        if (type === 'hidden') return; // skip hidden fields
+        const field = { tag: inp.tagName.toLowerCase() };
+        const name = $i.attr('name'); if (name) field.name = name.slice(0, 40);
+        if (type) field.type = type;
+        const ph = $i.attr('placeholder'); if (ph) field.placeholder = ph.slice(0, 60);
+        const label = $i.attr('aria-label') || $i.attr('title');
+        if (label) field.label = label.slice(0, 60);
+        if ($i.attr('required') !== undefined) field.required = true;
+        const min = $i.attr('min'); if (min) field.min = min;
+        const max = $i.attr('max'); if (max) field.max = max;
+        const minLen = $i.attr('minlength'); if (minLen) field.minlength = minLen;
+        const maxLen = $i.attr('maxlength'); if (maxLen) field.maxlength = maxLen;
+        const pattern = $i.attr('pattern'); if (pattern) field.pattern = pattern.slice(0, 60);
+        if (inp.tagName.toLowerCase() === 'select') {
+          const opts = [];
+          $i.find('option').each((_, o) => { if (opts.length < 8) opts.push($(o).text().trim().slice(0, 40)); });
+          if (opts.length) field.options = opts;
+        }
+        fields.push(field);
+      });
+      // Find submit buttons within or associated with the form
+      const submitBtns = [];
+      $f.find('button, input[type="submit"], input[type="button"]').each((_, btn) => {
+        if (submitBtns.length >= 3) return false;
+        submitBtns.push($(btn).text().trim().slice(0, 40) || $(btn).attr('value')?.slice(0, 40) || 'Submit');
+      });
+      forms.push({
+        action: $f.attr('action')?.slice(0, 120) || null,
+        method: ($f.attr('method') || 'GET').toUpperCase(),
+        fields,
+        submitButtons: submitBtns.length ? submitBtns : undefined,
+      });
+    });
+    if (forms.length) analysis.forms = forms;
+
+    // Buttons and CTAs (outside forms)
+    const buttons = [];
+    $('button, [role="button"], a.btn, a.button, a.cta, a[class*="btn-"], a[class*="Button"], input[type="submit"]').each((_, el) => {
+      if (buttons.length >= 20) return false;
+      const $b = $(el);
+      // Skip if already inside a form (captured above)
+      if ($b.closest('form').length) return;
+      const text = $b.text().trim().slice(0, 60) || $b.attr('value')?.slice(0, 60) || $b.attr('aria-label')?.slice(0, 60);
+      if (!text) return;
+      const btn = { text };
+      if (el.tagName.toLowerCase() === 'a') {
+        const href = $b.attr('href');
+        if (href && !href.startsWith('#') && !href.startsWith('javascript:')) btn.href = href.slice(0, 120);
+      }
+      buttons.push(btn);
+    });
+    if (buttons.length) analysis.buttons = buttons;
+
+    // Navigation links
+    const navLinks = [];
+    $('nav a[href], header a[href], [role="navigation"] a[href]').each((_, a) => {
+      if (navLinks.length >= 15) return false;
+      const href = $(a).attr('href');
+      const text = $(a).text().trim().slice(0, 50);
+      if (!text || !href || href === '#' || href.startsWith('javascript:')) return;
+      navLinks.push({ text, href: href.slice(0, 100) });
+    });
+    if (navLinks.length) analysis.navLinks = navLinks;
+
+    // Images
+    const imgTotal = $('img').length;
+    if (imgTotal > 0) {
+      let withAlt = 0, withoutAlt = 0;
+      const sample = [];
+      $('img').each((_, img) => {
+        const alt = $(img).attr('alt');
+        if (alt && alt.trim()) withAlt++; else withoutAlt++;
+        if (sample.length < 10) {
+          sample.push({
+            src: ($(img).attr('src') || $(img).attr('data-src') || '').slice(0, 100),
+            alt: alt?.trim()?.slice(0, 60) || null,
+            lazy: $(img).attr('loading') === 'lazy' || $(img).attr('data-src') ? true : undefined,
+          });
+        }
+      });
+      analysis.images = { total: imgTotal, withAlt, withoutAlt, sample };
+    }
+
+    // Links summary
+    let totalInternal = 0, totalExternal = 0;
+    const sampleInternal = [], sampleExternal = [];
+    $('a[href]').each((_, a) => {
+      const href = $(a).attr('href');
+      if (!href || href.startsWith('#') || href.startsWith('javascript:') || href.startsWith('mailto:') || href.startsWith('tel:')) return;
+      try {
+        const abs = new URL(href, pageUrl).href;
+        const text = $(a).text().trim().slice(0, 50);
+        if (abs.startsWith(origin)) {
+          totalInternal++;
+          if (sampleInternal.length < 10) sampleInternal.push({ text, path: new URL(abs).pathname.slice(0, 80) });
+        } else {
+          totalExternal++;
+          if (sampleExternal.length < 5) sampleExternal.push({ text, href: abs.slice(0, 120) });
+        }
+      } catch (_) {}
+    });
+    if (totalInternal + totalExternal > 0) {
+      analysis.links = { totalInternal, totalExternal, sampleInternal, sampleExternal };
+    }
+
+    // Interactive elements detection
+    const interactive = [];
+    if ($('select:not(form select)').length || $('[class*="dropdown" i], [data-toggle="dropdown"], [data-bs-toggle="dropdown"]').length) interactive.push('dropdown');
+    if ($('[class*="modal" i], [data-toggle="modal"], [data-bs-toggle="modal"], [role="dialog"]').length) interactive.push('modal');
+    if ($('[role="tablist"], [class*="tab-" i], [data-toggle="tab"], [data-bs-toggle="tab"]').length) interactive.push('tabs');
+    if ($('[class*="accordion" i], [data-toggle="collapse"], [data-bs-toggle="collapse"]').length) interactive.push('accordion');
+    if ($('[class*="carousel" i], [class*="slider" i], [class*="swiper" i]').length) interactive.push('carousel/slider');
+    if ($('video, audio').length) interactive.push('video/audio');
+    if ($('iframe[src*="youtube"], iframe[src*="vimeo"]').length) interactive.push('embedded-video');
+    if ($('iframe[src*="map"], [class*="map" i]').length) interactive.push('map');
+    if ($('[class*="search" i] input, input[type="search"], [role="search"]').length) interactive.push('search');
+    if ($('[class*="cookie" i], [class*="consent" i]').length) interactive.push('cookie-consent');
+    if ($('[class*="chat" i], [class*="widget" i]').length) interactive.push('chat-widget');
+    if (interactive.length) analysis.interactive = interactive;
+
+    // Footer content
+    const footerLinks = [];
+    $('footer a[href]').each((_, a) => {
+      if (footerLinks.length >= 10) return false;
+      const text = $(a).text().trim().slice(0, 40);
+      const href = $(a).attr('href');
+      if (text && href && href !== '#') footerLinks.push({ text, href: href.slice(0, 80) });
+    });
+    if (footerLinks.length) analysis.footerLinks = footerLinks;
+
+    // Embeds
+    const scriptCount = $('script[src]').length;
+    const iframeCount = $('iframe').length;
+    if (scriptCount || iframeCount) {
+      analysis.embeds = {};
+      if (scriptCount) analysis.embeds.scripts = scriptCount;
+      if (iframeCount) analysis.embeds.iframes = iframeCount;
+    }
+
+    return Object.keys(analysis).length ? analysis : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+async function fetchText(url, timeoutMs = 10000, accept = 'text/html,application/xhtml+xml,application/xml,text/xml') {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -62,7 +243,7 @@ async function fetchText(url, timeoutMs = 8000, accept = 'text/html,application/
       redirect: 'follow',
       signal: ctrl.signal,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; QA-Nexus-Crawler/1.0; +dashboard)',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
         'Accept': accept,
         'Accept-Language': 'en-US,en;q=0.9',
       },
@@ -73,31 +254,35 @@ async function fetchText(url, timeoutMs = 8000, accept = 'text/html,application/
   finally { clearTimeout(t); }
 }
 
-async function checkPageStatus(url, timeoutMs = 8000) {
+async function checkPageStatus(url, timeoutMs = 10000) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  const UA = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
   try {
+    // Try GET first — many servers (Next.js, SSR frameworks) hang on HEAD requests
     const r = await fetch(url, {
-      method: 'HEAD',
+      method: 'GET',
       redirect: 'follow',
       signal: ctrl.signal,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (compatible; QA-Nexus-Crawler/1.0; +dashboard)',
+        'User-Agent': UA,
         'Accept': 'text/html,application/xhtml+xml',
         'Accept-Language': 'en-US,en;q=0.9',
       },
     });
+    // Consume body to free the connection
+    try { await r.text(); } catch (_) {}
     return { status: r.status, statusText: r.statusText };
   } catch (e) {
     return { status: 0, statusText: e.name === 'AbortError' ? 'Timeout' : 'Network Error' };
   } finally { clearTimeout(t); }
 }
 
-async function fetchHtml(url, timeoutMs = 8000) {
+async function fetchHtml(url, timeoutMs = 10000) {
   const r = await fetchText(url, timeoutMs, 'text/html,application/xhtml+xml');
-  if (!r || !r.text) return null;
-  if (!/text\/html|xhtml/i.test(r.contentType)) return null;
-  return r.text;
+  if (!r || !r.text) return { html: null, status: r?.status || 0, statusText: r?.statusText || 'Network Error' };
+  if (!/text\/html|xhtml/i.test(r.contentType)) return { html: null, status: r.status, statusText: r.statusText };
+  return { html: r.text, status: r.status, statusText: r.statusText };
 }
 
 // ── Sitemap discovery ────────────────────────────────────────────────────────
@@ -226,7 +411,7 @@ exports.crawlSite = async (req, res) => {
     if (!/^https?:$/.test(start.protocol)) return res.status(400).json({ error: 'only http(s) allowed' });
 
     const origin = start.origin;
-    const limit = Math.max(1, Math.min(300, Number(maxPages) || 60));
+    const limit = Math.max(1, Math.min(1000, Number(maxPages) || 60));
     const depthLimit = Math.max(0, Math.min(5, Number(maxDepth) || 2));
 
     // Detect real base URL: if user gave a sub-path, check if the origin root is reachable.
@@ -334,18 +519,31 @@ exports.crawlSite = async (req, res) => {
       bfsVisited.add(current);
       bfsCount++;
 
-      const html = await fetchHtml(current);
-      if (!html) { errors.push(current); continue; }
+      const fetchResult = await fetchHtml(current);
+      const htmlText = fetchResult?.html || null;
 
-      // Add / update title for this page
-      const titleMatch = html.match(TITLE_RE);
-      const title = titleMatch ? stripTags(titleMatch[1]).slice(0, 140) : '';
+      // Store HTTP status from BFS visit so we don't re-request later
       addCandidate(current, 'bfs', depth);
       const existing = byUrl.get(current.split('#')[0]);
+      if (existing && fetchResult) {
+        existing.httpStatus = fetchResult.status || 0;
+        existing.httpStatusText = fetchResult.statusText || '';
+      }
+
+      if (!htmlText) { errors.push(current); continue; }
+
+      // Add / update title for this page
+      const titleMatch = htmlText.match(TITLE_RE);
+      const title = titleMatch ? stripTags(titleMatch[1]).slice(0, 140) : '';
       if (existing && !existing.title) existing.title = title;
 
+      // Page structure analysis — extract forms, buttons, images, headings, etc.
+      if (existing && !existing.pageAnalysis) {
+        try { existing.pageAnalysis = analyzePageHtml(htmlText, current, origin); } catch (_) {}
+      }
+
       // Strategy 3: __NEXT_DATA__ route extraction (runs on every HTML page)
-      const nextRoutes = extractNextDataRoutes(html, origin);
+      const nextRoutes = extractNextDataRoutes(htmlText, origin);
       if (nextRoutes.length) {
         const before = byUrl.size;
         nextRoutes.forEach(u => addCandidate(u, 'next-data', depth + 1));
@@ -359,7 +557,7 @@ exports.crawlSite = async (req, res) => {
       // Regex link extraction
       let m;
       HREF_RE.lastIndex = 0;
-      while ((m = HREF_RE.exec(html)) !== null) {
+      while ((m = HREF_RE.exec(htmlText)) !== null) {
         let href = m[1].trim();
         if (!href || href.startsWith('mailto:') || href.startsWith('tel:') || href.startsWith('javascript:') || href.startsWith('data:')) continue;
         let abs;
@@ -401,16 +599,45 @@ exports.crawlSite = async (req, res) => {
     // Append external URLs at the end
     const extPages = Array.from(externalUrls.values());
 
-    // Check HTTP status for all pages (internal + external), batched
+    // Check HTTP status only for pages NOT already checked during BFS
     const combined = [...allPages, ...extPages];
-    const BATCH = 10;
-    for (let i = 0; i < combined.length; i += BATCH) {
-      const batch = combined.slice(i, i + BATCH);
-      const results = await Promise.all(batch.map(p => checkPageStatus(p.url)));
+    const unchecked = combined.filter(p => !p.httpStatus);
+    const BATCH = 20;
+    for (let i = 0; i < unchecked.length; i += BATCH) {
+      const batch = unchecked.slice(i, i + BATCH);
+      const results = await Promise.all(batch.map(p => checkPageStatus(p.url, 10000)));
       batch.forEach((p, j) => {
         p.httpStatus = results[j].status;
         p.httpStatusText = results[j].statusText;
       });
+    }
+    // Default any still-missing status to 200 (sitemap-listed = assumed valid)
+    combined.forEach(p => {
+      if (!p.httpStatus) { p.httpStatus = 200; p.httpStatusText = 'OK (sitemap)'; }
+    });
+
+    // ── Page structure analysis pass ─────────────────────────────────────────
+    // Fetch HTML and extract real page elements (forms, buttons, images, etc.)
+    // for pages that weren't visited during BFS (e.g., sitemap-only pages).
+    const unanalyzed = combined.filter(p => !p.pageAnalysis && !p.external && p.httpStatus >= 200 && p.httpStatus < 400);
+    const ANALYSIS_BATCH = 10;
+    for (let i = 0; i < unanalyzed.length; i += ANALYSIS_BATCH) {
+      const batch = unanalyzed.slice(i, i + ANALYSIS_BATCH);
+      const results = await Promise.all(batch.map(async (p) => {
+        try {
+          const fetchResult = await fetchHtml(p.url, 10000);
+          if (fetchResult?.html) {
+            // Also extract title if missing
+            if (!p.title) {
+              const tm = fetchResult.html.match(TITLE_RE);
+              if (tm) p.title = stripTags(tm[1]).slice(0, 140);
+            }
+            return analyzePageHtml(fetchResult.html, p.url, origin);
+          }
+        } catch (_) {}
+        return null;
+      }));
+      batch.forEach((p, j) => { if (results[j]) p.pageAnalysis = results[j]; });
     }
 
     res.json({

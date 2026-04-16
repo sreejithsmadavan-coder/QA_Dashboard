@@ -90,6 +90,6 @@ export const getQAAgentRun = (id) => api.get(`/qa-agent/runs/${id}`);
 export const createQAAgentRun = (data) => api.post('/qa-agent/runs', data);
 export const deleteQAAgentRun = (id) => api.delete(`/qa-agent/runs/${id}`);
 export const clearQAAgentRuns = () => api.delete('/qa-agent/runs');
-export const crawlQAAgentSite = (data) => api.post('/qa-agent/crawl', data);
+export const crawlQAAgentSite = (data) => api.post('/qa-agent/crawl', data, { timeout: 300000 });
 
 export default api;
