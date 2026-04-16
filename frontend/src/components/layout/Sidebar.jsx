@@ -7,7 +7,7 @@ const NAV = [
   { k: 'meetings',  ic: '📅', l: 'Meetings' },
 ];
 
-export default function Sidebar({ page, setPage, activeProjId, setActiveProjId, onLogoClick, onLogout, user }) {
+export default function Sidebar({ page, setPage, activeProjId, setActiveProjId, onLogoClick, onLogout, user, qaRunning, qaBackground, qaProgress = 0, qaCompletedPending = false }) {
   return (
     <div style={{ width: 230, background: 'var(--bc)', borderRight: '1px solid var(--bd)', display: 'flex', flexDirection: 'column', flexShrink: 0, overflow: 'hidden' }}>
       {/* Logo */}
@@ -20,12 +20,50 @@ export default function Sidebar({ page, setPage, activeProjId, setActiveProjId, 
 
       {/* Nav */}
       <div style={{ flex: 1, padding: '10px', overflowY: 'auto' }}>
-        {NAV.map(n => (
-          <button key={n.k} className={`sb ${page === n.k && !activeProjId ? 'sb-a' : ''}`}
-            onClick={() => { setActiveProjId(null); setPage(n.k); }}>
-            <span style={{ fontSize: 15, width: 20, textAlign: 'center', flexShrink: 0 }}>{n.ic}</span>{n.l}
-          </button>
-        ))}
+        {NAV.map(n => {
+          const isQA = n.k === 'qa-agent';
+          const offQA = page !== 'qa-agent';
+          const showRunBadge = isQA && qaBackground && qaRunning && offQA;
+          const showDoneBadge = isQA && !qaRunning && qaCompletedPending && offQA;
+          const hasStatus = showRunBadge || showDoneBadge;
+          return (
+            <button key={n.k} className={`sb ${page === n.k && !activeProjId ? 'sb-a' : ''}`}
+              onClick={() => { setActiveProjId(null); setPage(n.k); }}
+              style={{ position: 'relative', alignItems: hasStatus ? 'flex-start' : 'center', paddingTop: hasStatus ? 8 : undefined, paddingBottom: hasStatus ? 8 : undefined }}>
+              <span style={{ fontSize: 15, width: 20, textAlign: 'center', flexShrink: 0, marginTop: hasStatus ? 1 : 0 }}>{n.ic}</span>
+              <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', flex: 1, minWidth: 0, gap: 4 }}>
+                <span style={{ textAlign: 'left', whiteSpace: 'nowrap' }}>{n.l}</span>
+                {showRunBadge && (
+                  <span style={{
+                    fontSize: 8.5, fontWeight: 700, letterSpacing: '.05em',
+                    padding: '2px 7px', borderRadius: 10,
+                    background: 'rgba(200,230,74,.18)', color: 'var(--lime)',
+                    border: '1px solid rgba(200,230,74,.45)',
+                    display: 'inline-flex', alignItems: 'center', gap: 5,
+                    animation: 'qaRunPulse 1.6s ease infinite',
+                    whiteSpace: 'nowrap', lineHeight: 1.2,
+                  }}>
+                    <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--lime)', display: 'inline-block', boxShadow: '0 0 6px var(--lime)' }} />
+                    RUNNING {Math.round(qaProgress)}%
+                  </span>
+                )}
+                {showDoneBadge && (
+                  <span style={{
+                    fontSize: 8.5, fontWeight: 700, letterSpacing: '.05em',
+                    padding: '2px 7px', borderRadius: 10,
+                    background: 'rgba(63,185,80,.18)', color: '#3fb950',
+                    border: '1px solid rgba(63,185,80,.45)',
+                    display: 'inline-flex', alignItems: 'center', gap: 4,
+                    whiteSpace: 'nowrap', lineHeight: 1.2,
+                  }}>
+                    ✓ COMPLETED
+                  </span>
+                )}
+              </span>
+            </button>
+          );
+        })}
+        <style>{`@keyframes qaRunPulse{0%,100%{opacity:1}50%{opacity:.55}}`}</style>
       </div>
 
       {/* Bottom */}

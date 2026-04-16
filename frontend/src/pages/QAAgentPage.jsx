@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import {
   getQAAgentConfig, saveQAAgentConfig,
   listQAAgentRuns, createQAAgentRun, deleteQAAgentRun,
+  crawlQAAgentSite, getProjects,
 } from '../api/client';
 
 // Map a module run object → backend payload
@@ -28,7 +29,7 @@ function runToPayload(r) {
   };
 }
 
-export default function QAAgentPage({ theme, toast }) {
+export default function QAAgentPage({ theme, toast, onNavigateCreateProject }) {
   const iframeRef = useRef(null);
   const hydratedRef = useRef(false);
   const src = `/qa-agent/index.html?theme=${theme === 'light' ? 'light' : 'dark'}`;
@@ -40,9 +41,11 @@ export default function QAAgentPage({ theme, toast }) {
       const results = await Promise.allSettled([
         getQAAgentConfig(),
         listQAAgentRuns({ limit: 25 }),
+        getProjects(),
       ]);
       const cfg = results[0].status === 'fulfilled' ? results[0].value.data : null;
       const runs = results[1].status === 'fulfilled' ? results[1].value.data : null;
+      const projectsRaw = results[2].status === 'fulfilled' ? results[2].value.data : null;
 
       const payload = {};
       if (Array.isArray(runs) && runs.length > 0) {
@@ -62,6 +65,11 @@ export default function QAAgentPage({ theme, toast }) {
       }
       if (cfg?.state && typeof cfg.state === 'object' && Object.keys(cfg.state).length > 0) {
         payload.state = cfg.state;
+      }
+      // Pass projects list (id + name) for the project dropdown
+      const projList = Array.isArray(projectsRaw) ? projectsRaw : (projectsRaw?.rows || []);
+      if (projList.length > 0) {
+        payload.projects = projList.map(p => ({ id: p.id, name: p.name }));
       }
       if (cfg?.apiKey) payload.apiKey = cfg.apiKey;
       if (cfg?.provider) payload.provider = cfg.provider;
@@ -102,6 +110,38 @@ export default function QAAgentPage({ theme, toast }) {
           });
         } else if (msg.type === 'apikey-removed') {
           await saveQAAgentConfig({ apiKey: null });
+        } else if (msg.type === 'navigate-create-project') {
+          onNavigateCreateProject?.();
+        } else if (msg.type === 'refresh-projects') {
+          try {
+            const resp = await getProjects();
+            const projList = Array.isArray(resp.data) ? resp.data : (resp.data?.rows || []);
+            iframeRef.current?.contentWindow?.postMessage({
+              source: 'qa-agent-host', type: 'projects-updated',
+              data: projList.map(p => ({ id: p.id, name: p.name })),
+            }, '*');
+          } catch (e) {
+            console.warn('Failed to refresh projects', e);
+          }
+        } else if (msg.type === 'crawl-request') {
+          const reqId = msg.data?.reqId;
+          try {
+            const resp = await crawlQAAgentSite({
+              url: msg.data?.url,
+              maxPages: msg.data?.maxPages || 60,
+              maxDepth: msg.data?.maxDepth || 2,
+              deep: !!msg.data?.deep,
+            });
+            iframeRef.current?.contentWindow?.postMessage({
+              source: 'qa-agent-host', type: 'crawl-result',
+              data: { reqId, ok: true, result: resp.data },
+            }, '*');
+          } catch (e) {
+            iframeRef.current?.contentWindow?.postMessage({
+              source: 'qa-agent-host', type: 'crawl-result',
+              data: { reqId, ok: false, error: e?.message || 'crawl failed' },
+            }, '*');
+          }
         }
       } catch (e) {
         console.warn('QA Agent persist failed', e);
