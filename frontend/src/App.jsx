@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, lazy, Suspense } from 'react';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { login as apiLogin } from './api/client';
 import { Toasts, useToast } from './components/ui/Toast';
@@ -8,12 +8,15 @@ import Topbar from './components/layout/Topbar';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import ProjectsPage from './pages/ProjectsPage';
-import ProjectInnerPage from './pages/ProjectInnerPage';
-import MeetingsPage from './pages/MeetingsPage';
-import ProfilePage from './pages/ProfilePage';
-import SettingsPage from './pages/SettingsPage';
-import QAAgentPage from './pages/QAAgentPage';
-import ChatBotIcon from './components/ui/ChatBotIcon';
+
+// Lazy-load heavy pages (code-split into separate chunks)
+const ProjectInnerPage = lazy(() => import('./pages/ProjectInnerPage'));
+const MeetingsPage = lazy(() => import('./pages/MeetingsPage'));
+const ProfilePage = lazy(() => import('./pages/ProfilePage'));
+const SettingsPage = lazy(() => import('./pages/SettingsPage'));
+const QAAgentPage = lazy(() => import('./pages/QAAgentPage'));
+const ChatBotIcon = lazy(() => import('./components/ui/ChatBotIcon'));
+const CommandPalette = lazy(() => import('./components/ui/CommandPalette'));
 import { getActivityFeed } from './api/client';
 import useSocket from './hooks/useSocket';
 
@@ -52,6 +55,16 @@ function AppContent() {
   const [qaProgress, setQaProgress] = useState(0);
   const [qaCompletedPending, setQaCompletedPending] = useState(false);
   const [autoCreateProject, setAutoCreateProject] = useState(false);
+  const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
+
+  // Global keyboard shortcuts (Ctrl+K search)
+  useEffect(() => {
+    const handleGlobalKey = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') { e.preventDefault(); setCmdPaletteOpen(o => !o); }
+    };
+    window.addEventListener('keydown', handleGlobalKey);
+    return () => window.removeEventListener('keydown', handleGlobalKey);
+  }, []);
 
   // Update browser tab title when page changes
   useEffect(() => {
@@ -283,10 +296,13 @@ function AppContent() {
           setTheme={setTheme}
           toast={toast}
           activity={activity}
+          onSearchClick={() => setCmdPaletteOpen(true)}
         />
         <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px', position: 'relative' }}>
           <div style={{ display: showQAAgent ? 'none' : 'block' }}>
-            {mainContent}
+            <Suspense fallback={<div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 60 }}><div style={{ width: 28, height: 28, border: '3px solid var(--bd)', borderTopColor: 'var(--lime)', borderRadius: '50%', animation: 'spin .8s linear infinite' }} /></div>}>
+              {mainContent}
+            </Suspense>
           </div>
           <div style={{ display: showQAAgent ? 'block' : 'none', height: '100%' }}>
             <QAAgentPage theme={theme} toast={toast} onNavigateCreateProject={() => {
@@ -299,7 +315,15 @@ function AppContent() {
         </div>
       </div>
 
-      <ChatBotIcon />
+      <Suspense fallback={null}>
+        <ChatBotIcon onNavigate={(pg) => { safeSetPage(pg); setActiveProjId(null); setActiveProject(null); }} />
+        <CommandPalette
+          open={cmdPaletteOpen}
+          onClose={() => setCmdPaletteOpen(false)}
+          onNavigate={(pg) => { safeSetPage(pg); setActiveProjId(null); setActiveProject(null); setCmdPaletteOpen(false); }}
+          onViewProject={(proj) => { setActiveProject(proj); setActiveProjId(proj.id); setCmdPaletteOpen(false); }}
+        />
+      </Suspense>
       <Toasts items={toasts} remove={removeToast} />
 
       {showLogoutConfirm && (

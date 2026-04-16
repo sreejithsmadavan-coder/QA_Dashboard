@@ -6,6 +6,7 @@ import {
   createExecution, uploadFile, getCategorySummary, getExecutionSummary, getDetailedAnalysis,
 } from '../api/client';
 import { Donut, ProgBar } from '../components/ui/Charts';
+import KanbanBoard from '../components/ui/KanbanBoard';
 import useSocket from '../hooks/useSocket';
 
 // Re-usable within this page only
@@ -149,22 +150,43 @@ function FileViewerModal({ file, onClose }) {
 }
 
 // ── TABS ───────────────────────────────────────────────────────────────────────
-const TABS = ['Overview', 'Details', 'Test Cases', 'Execution', 'API Testing', 'Performance', '404 Pages', 'Broken Links'];
+const TABS = ['Overview', 'Details', 'Bugs', 'Test Cases', 'Execution', 'API Testing', 'Performance', '404 Pages', 'Broken Links'];
 
 const HEALTH_COLOR = { Excellent: '#22c55e', Good: '#38BDF8', Average: '#FFB547', Poor: '#FF4D4D' };
 const HEALTH_IC = { Excellent: '✓', Good: '◎', Average: '◎', Poor: '✕' };
 
 // ── OverviewTab ────────────────────────────────────────────────────────────────
 function OverviewTab({ project }) {
-  const passed = Math.round((project.testCasesCount || 0) * (project.passRate || 0) / 100);
-  const failed = (project.testCasesCount || 0) - passed;
+  const [tcStats, setTcStats] = useState(null);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await getTestCases({ projectId: project.id });
+        const all = Array.isArray(res.data) ? res.data : [];
+        const passed = all.filter(t => t.testResult && t.testResult.toLowerCase() === 'pass').length;
+        const failed = all.filter(t => t.testResult && t.testResult.toLowerCase() === 'fail').length;
+        const notRun = all.length - passed - failed;
+        setTcStats({ total: all.length, passed, failed, notRun });
+      } catch {
+        setTcStats(null);
+      }
+    })();
+  }, [project.id]);
+
+  const total = tcStats ? tcStats.total : (project.testCasesCount || 0);
+  const passed = tcStats ? tcStats.passed : 0;
+  const failed = tcStats ? tcStats.failed : 0;
+  const notRun = tcStats ? tcStats.notRun : 0;
+  const passRate = total > 0 ? Math.round((passed / total) * 100) : 0;
+  const failRate = total > 0 ? Math.round((failed / total) * 100) : 0;
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14 }}>
         {[
-          ['Test Cases', project.testCasesCount || 0, `${passed} passed · ${failed} failed`, 'var(--tx)'],
-          ['Pass Rate', `${project.passRate || 0}%`, `${passed} test cases passed`, 'var(--lime)'],
-          ['Fail Rate', `${(100 - (project.passRate || 0)).toFixed(1)}%`, `${failed} test cases failed`, 'var(--rd)'],
+          ['Test Cases', total, `${passed} passed · ${failed} failed${notRun > 0 ? ` · ${notRun} not run` : ''}`, 'var(--tx)'],
+          ['Pass Rate', `${passRate}%`, `${passed} test cases passed`, passed > 0 ? 'var(--lime)' : 'var(--t2)'],
+          ['Fail Rate', `${failRate}%`, `${failed} test cases failed`, failed > 0 ? 'var(--rd)' : 'var(--t2)'],
         ].map(([label, value, sub, color]) => (
           <div key={label} className="mc">
             <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--t2)', marginBottom: 10 }}>{label}</div>
@@ -193,6 +215,243 @@ function OverviewTab({ project }) {
           </div>
         </Cd>
       </div>
+    </div>
+  );
+}
+
+// ── BugsTab (Kanban + List toggle) ───────────────────────────────────────────
+function BugsTab({ bugs, project, toast }) {
+  const [view, setView] = useState('kanban');
+  const [bugList, setBugList] = useState([]);
+  const [failedCases, setFailedCases] = useState([]);
+  const [showSource, setShowSource] = useState('all'); // 'all' | 'bugs' | 'failed'
+  const [selectedBug, setSelectedBug] = useState(null);
+
+  // Load failed test cases (testResult === 'Fail') as virtual bugs
+  useEffect(() => {
+    (async () => {
+      try {
+        const tcRes = await getTestCases({ projectId: project.id });
+        const allCases = Array.isArray(tcRes.data) ? tcRes.data : [];
+        const failed = allCases.filter(t => t.testResult && t.testResult.toLowerCase() === 'fail');
+        const virtualBugs = failed.map(tc => ({
+          id: `failed-${tc.id}`,
+          title: tc.name || `Failed Test ${tc.testCaseRefId || '#' + tc.id}`,
+          severity: tc.severity || tc.priority?.includes('P0') ? 'Critical' : tc.priority?.includes('P1') ? 'High' : 'Medium',
+          status: 'Open',
+          assignee: null,
+          reporter: 'System (Auto-detected)',
+          description: tc.expectedResult ? `Expected: ${tc.expectedResult.slice(0, 200)}` : tc.description || '',
+          _source: 'failed_test',
+          _testCaseId: tc.id,
+          _testCaseRefId: tc.testCaseRefId,
+          _category: tc.category,
+          _module: tc.module,
+          projectId: project.id,
+        }));
+        setFailedCases(virtualBugs);
+      } catch {}
+    })();
+  }, [project.id]);
+
+  // Merge bugs + failed test cases
+  useEffect(() => {
+    const realBugs = (bugs || []).map(b => ({ ...b, _source: 'bug' }));
+    if (showSource === 'bugs') setBugList(realBugs);
+    else if (showSource === 'failed') setBugList(failedCases);
+    else setBugList([...realBugs, ...failedCases]);
+  }, [bugs, failedCases, showSource]);
+
+  const handleStatusChange = async (bugId, newStatus) => {
+    // Virtual bugs (from failed tests) can't be updated via bug API
+    if (String(bugId).startsWith('failed-')) {
+      setBugList(prev => prev.map(b => b.id === bugId ? { ...b, status: newStatus } : b));
+      toast('info', `Failed test moved to ${newStatus} (local only)`);
+      return;
+    }
+    try {
+      await updateBug(bugId, { status: newStatus });
+      setBugList(prev => prev.map(b => b.id === bugId ? { ...b, status: newStatus } : b));
+      toast('success', `Bug status updated to ${newStatus}`);
+    } catch { toast('error', 'Failed to update bug status'); }
+  };
+
+  return (
+    <div>
+      {/* Toolbar */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--tx)' }}>
+            Bugs ({bugList.length})
+          </div>
+          {/* Source filter */}
+          <div style={{ display: 'flex', background: 'var(--b2)', borderRadius: 8, padding: 2, border: '1px solid var(--bd)' }}>
+            {[
+              ['all', `All (${(bugs || []).length + failedCases.length})`],
+              ['bugs', `Bugs (${(bugs || []).length})`],
+              ['failed', `Failed Tests (${failedCases.length})`],
+            ].map(([v, label]) => (
+              <button key={v} onClick={() => setShowSource(v)} style={{
+                padding: '4px 10px', borderRadius: 6, border: 'none', fontSize: 11, fontWeight: 600,
+                background: showSource === v ? 'var(--bc)' : 'transparent',
+                color: showSource === v ? 'var(--tx)' : 'var(--t3)',
+                cursor: 'pointer', fontFamily: "'DM Sans',sans-serif",
+                boxShadow: showSource === v ? '0 1px 4px rgba(0,0,0,.15)' : 'none',
+                transition: 'all .2s',
+              }}>{label}</button>
+            ))}
+          </div>
+        </div>
+        <div style={{ display: 'flex', background: 'var(--b2)', borderRadius: 8, padding: 2, border: '1px solid var(--bd)' }}>
+          {[['kanban', '▦ Kanban'], ['list', '☰ List']].map(([v, label]) => (
+            <button key={v} onClick={() => setView(v)} style={{
+              padding: '6px 14px', borderRadius: 6, border: 'none', fontSize: 12, fontWeight: 600,
+              background: view === v ? 'var(--bc)' : 'transparent',
+              color: view === v ? 'var(--tx)' : 'var(--t3)',
+              cursor: 'pointer', fontFamily: "'DM Sans',sans-serif",
+              boxShadow: view === v ? '0 1px 4px rgba(0,0,0,.15)' : 'none',
+              transition: 'all .2s',
+            }}>{label}</button>
+          ))}
+        </div>
+      </div>
+
+      {/* Kanban View */}
+      {view === 'kanban' && (
+        <KanbanBoard bugs={bugList} onStatusChange={handleStatusChange} onCardClick={(bug) => setSelectedBug(bug)} />
+      )}
+
+      {/* List View */}
+      {view === 'list' && (
+        <div className="cd" style={{ padding: 0, overflow: 'hidden' }}>
+          {bugList.length === 0 ? (
+            <div style={{ padding: '40px 20px', textAlign: 'center', color: 'var(--t3)', fontSize: 13 }}>No bugs found</div>
+          ) : bugList.map((b, i) => (
+            <div key={b.id} style={{
+              display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px',
+              borderBottom: i < bugList.length - 1 ? '1px solid var(--bd)' : 'none',
+              transition: 'background .15s', cursor: 'default',
+            }}>
+              <span style={{
+                width: 8, height: 8, borderRadius: '50%', flexShrink: 0,
+                background: b.severity === 'Critical' ? 'var(--rd)' : b.severity === 'High' ? 'var(--am)' : b.severity === 'Medium' ? '#eab308' : 'var(--tl)',
+              }} />
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.title}</div>
+                <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 2 }}>{b.severity} · {b.assignee || 'Unassigned'}</div>
+              </div>
+              {b._source === 'failed_test' && (
+                <span style={{ padding: '2px 8px', borderRadius: 5, fontSize: 10, fontWeight: 700, background: 'rgba(255,77,77,.08)', color: 'var(--rd)', border: '1px solid rgba(255,77,77,.15)', marginRight: 6 }}>Failed Test</span>
+              )}
+              <span style={{
+                padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                background: b.status === 'Open' ? 'rgba(255,77,77,.1)' : b.status === 'In Progress' ? 'rgba(255,181,71,.1)' : b.status === 'Resolved' ? 'rgba(74,230,200,.1)' : 'rgba(107,112,128,.1)',
+                color: b.status === 'Open' ? 'var(--rd)' : b.status === 'In Progress' ? 'var(--am)' : b.status === 'Resolved' ? 'var(--tl)' : 'var(--t3)',
+              }}>{b.status}</span>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Bug Detail Modal */}
+      {selectedBug && (
+        <div style={{ position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div onClick={() => setSelectedBug(null)} style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,.5)', backdropFilter: 'blur(3px)' }} />
+          <div style={{
+            position: 'relative', width: 560, maxHeight: '80vh', background: 'var(--bc)', borderRadius: 20,
+            border: '1px solid var(--bd)', boxShadow: 'var(--shadow-lg)', overflow: 'auto',
+            animation: 'fadeUp .2s ease', padding: 0,
+          }}>
+            {/* Header */}
+            <div style={{ padding: '20px 24px', borderBottom: '1px solid var(--bd)', display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 12 }}>
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8, flexWrap: 'wrap' }}>
+                  <span style={{
+                    padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700,
+                    background: selectedBug.severity === 'Critical' ? 'rgba(255,77,77,.12)' : selectedBug.severity === 'High' ? 'rgba(255,181,71,.12)' : 'rgba(200,230,74,.08)',
+                    color: selectedBug.severity === 'Critical' ? 'var(--rd)' : selectedBug.severity === 'High' ? 'var(--am)' : 'var(--lime)',
+                  }}>{selectedBug.severity}</span>
+                  <span style={{
+                    padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600,
+                    background: selectedBug.status === 'Open' ? 'rgba(255,77,77,.1)' : selectedBug.status === 'In Progress' ? 'rgba(255,181,71,.1)' : selectedBug.status === 'Resolved' ? 'rgba(74,230,200,.1)' : 'rgba(107,112,128,.1)',
+                    color: selectedBug.status === 'Open' ? 'var(--rd)' : selectedBug.status === 'In Progress' ? 'var(--am)' : selectedBug.status === 'Resolved' ? 'var(--tl)' : 'var(--t3)',
+                  }}>{selectedBug.status}</span>
+                  {selectedBug._source === 'failed_test' && (
+                    <span style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 700, background: 'rgba(255,77,77,.08)', color: 'var(--rd)' }}>Failed Test</span>
+                  )}
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--tx)', lineHeight: 1.4 }}>{selectedBug.title}</div>
+              </div>
+              <button onClick={() => setSelectedBug(null)} style={{ background: 'var(--b2)', border: '1px solid var(--bd)', borderRadius: 8, width: 32, height: 32, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, color: 'var(--t2)', flexShrink: 0 }}>✕</button>
+            </div>
+
+            {/* Body */}
+            <div style={{ padding: '20px 24px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Info grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                {selectedBug._testCaseRefId && (
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 4 }}>Test Case ID</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--cy)', fontFamily: 'monospace' }}>{selectedBug._testCaseRefId}</div>
+                  </div>
+                )}
+                {selectedBug._category && (
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 4 }}>Category</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx)' }}>{selectedBug._category}</div>
+                  </div>
+                )}
+                {selectedBug._module && (
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 4 }}>Module</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx)' }}>{selectedBug._module}</div>
+                  </div>
+                )}
+                <div>
+                  <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 4 }}>Assignee</div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx)' }}>{selectedBug.assignee || 'Unassigned'}</div>
+                </div>
+                {selectedBug.reporter && (
+                  <div>
+                    <div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 4 }}>Reporter</div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx)' }}>{selectedBug.reporter}</div>
+                  </div>
+                )}
+              </div>
+
+              {/* Description */}
+              {selectedBug.description && (
+                <div>
+                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--t2)', marginBottom: 6 }}>Description</div>
+                  <div style={{ fontSize: 13, color: 'var(--tx)', lineHeight: 1.7, background: 'var(--b2)', borderRadius: 10, padding: '12px 16px', border: '1px solid var(--bd)', whiteSpace: 'pre-wrap', maxHeight: 200, overflow: 'auto' }}>
+                    {selectedBug.description}
+                  </div>
+                </div>
+              )}
+
+              {/* Status change buttons */}
+              <div>
+                <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--t2)', marginBottom: 8 }}>Change Status</div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                  {['Open', 'In Progress', 'Resolved', 'Closed'].map(s => (
+                    <button key={s} onClick={() => { handleStatusChange(selectedBug.id, s); setSelectedBug(prev => ({ ...prev, status: s })); }}
+                      disabled={selectedBug.status === s}
+                      style={{
+                        padding: '7px 16px', borderRadius: 8, border: '1px solid var(--bd)', fontSize: 12, fontWeight: 600,
+                        cursor: selectedBug.status === s ? 'default' : 'pointer',
+                        fontFamily: "'DM Sans',sans-serif",
+                        background: selectedBug.status === s ? 'var(--lime)' : 'var(--b2)',
+                        color: selectedBug.status === s ? '#121418' : 'var(--tx)',
+                        opacity: selectedBug.status === s ? 1 : 0.8,
+                        transition: 'all .2s',
+                      }}>{s}</button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -295,9 +554,59 @@ function TestCasesTab({ project, toast }) {
     setImporting(false);
   };
 
+  const handleExportExcel = async () => {
+    try {
+      const res = await getTestCases({ projectId: project.id });
+      const allCases = Array.isArray(res.data) ? res.data : [];
+      if (allCases.length === 0) { toast('info', 'No test cases to export'); return; }
+
+      const XLSX = await import('xlsx');
+      const exportData = allCases.map(tc => ({
+        'Test Case ID': tc.testCaseRefId || `TC-${tc.id}`,
+        'Name': tc.name,
+        'Category': tc.category || '',
+        'Module': tc.module || '',
+        'Sub Module': tc.subModule || '',
+        'Test Type': tc.testType || '',
+        'Description': tc.description || '',
+        'Preconditions': tc.preconditions || '',
+        'Test Steps': tc.testSteps || '',
+        'Test Data': tc.testData || '',
+        'Expected Result': tc.expectedResult || '',
+        'Actual Result': (tc.actualResult || '').slice(0, 500),
+        'Test Result': tc.testResult || '',
+        'Severity': tc.severity || '',
+        'Priority': tc.priority || '',
+        'Status': tc.status || '',
+        'Remarks': (tc.remarks || '').slice(0, 500),
+      }));
+
+      const ws = XLSX.utils.json_to_sheet(exportData);
+      // Auto-size columns
+      const colWidths = Object.keys(exportData[0]).map(key => ({
+        wch: Math.max(key.length, ...exportData.slice(0, 50).map(r => String(r[key] || '').length)).toString().length > 50 ? 50 : Math.max(key.length + 2, 12)
+      }));
+      ws['!cols'] = colWidths;
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, 'Test Cases');
+      XLSX.writeFile(wb, `${project.name.replace(/[^a-zA-Z0-9]/g, '_')}_TestCases.xlsx`);
+      toast('success', `Exported ${allCases.length} test cases to Excel`);
+    } catch (err) {
+      toast('error', 'Failed to export: ' + (err.message || 'Unknown error'));
+    }
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+        {/* View/Export as Excel */}
+        <button onClick={handleExportExcel}
+          style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 9, background: 'rgba(34,197,94,.08)', border: '1px solid rgba(34,197,94,.25)', color: '#22c55e', fontSize: 13, fontWeight: 600, cursor: 'pointer', transition: 'border-color .2s', fontFamily: "'DM Sans',sans-serif" }}
+          onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(34,197,94,.5)'} onMouseLeave={e => e.currentTarget.style.borderColor = 'rgba(34,197,94,.25)'}>
+          📊 View in Excel
+        </button>
+        {/* Upload */}
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 16px', borderRadius: 9, background: 'var(--b2)', border: '1px solid var(--bd)', color: importing ? 'var(--t3)' : 'var(--tx)', fontSize: 13, fontWeight: 600, cursor: importing ? 'default' : 'pointer', transition: 'border-color .2s' }}
           onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(200,230,74,.3)'} onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--bd)'}>
           {importing ? '⏳ Importing…' : '📂 Upload Test Cases'}
@@ -533,13 +842,37 @@ function ExecutionTab({ project, toast }) {
 
   const load = useCallback(async () => {
     try {
-      const [exRes, smRes, anRes] = await Promise.all([
+      const [exRes, smRes, anRes, tcRes] = await Promise.all([
         getExecutions({ projectId: project.id }),
         getExecutionSummary({ projectId: project.id }),
         getDetailedAnalysis({ projectId: project.id }),
+        getTestCases({ projectId: project.id }),
       ]);
-      setRows(exRes.data);
-      setSummary(smRes.data);
+      // Use test_executions if available, otherwise fall back to test_cases with testResult
+      const execRows = exRes.data || [];
+      const testCases = Array.isArray(tcRes.data) ? tcRes.data : [];
+      if (execRows.length > 0) {
+        setRows(execRows);
+        setSummary(smRes.data);
+      } else if (testCases.length > 0) {
+        // Map test cases to execution-like rows for the filter/table
+        const mapped = testCases.filter(tc => tc.testResult).map(tc => ({
+          id: tc.id,
+          testCaseId: tc.id,
+          testCaseRefId: tc.testCaseRefId,
+          name: tc.name,
+          category: tc.category,
+          module: tc.module,
+          status: tc.testResult === 'Pass' ? 'Passed' : tc.testResult === 'Fail' ? 'Failed' : 'Skipped',
+          severity: tc.severity,
+          priority: tc.priority,
+        }));
+        setRows(mapped);
+        const passed = mapped.filter(r => r.status === 'Passed').length;
+        const failed = mapped.filter(r => r.status === 'Failed').length;
+        const skipped = mapped.filter(r => r.status === 'Skipped').length;
+        setSummary({ total: mapped.length, passed, failed, skipped, passRate: mapped.length > 0 ? Math.round((passed / mapped.length) * 100) : 0 });
+      }
       setAnalysis(anRes.data);
     } catch {}
     setLoading(false);
@@ -577,10 +910,37 @@ function ExecutionTab({ project, toast }) {
             </button>
           ))}
         </div>
-        <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 9, background: 'var(--b2)', border: '1px solid var(--bd)', color: importing ? 'var(--t3)' : 'var(--tx)', fontSize: 13, fontWeight: 600, cursor: importing ? 'default' : 'pointer' }}>
-          {importing ? '⏳ Importing…' : '📂 Upload Report'}
-          <input type="file" accept=".xlsx,.csv,.xls" style={{ display: 'none' }} disabled={importing} onChange={e => handleUpload(e.target.files[0])} />
-        </label>
+        <div style={{ display: 'flex', gap: 8 }}>
+          {/* Export execution data to Excel */}
+          {rows.length > 0 && (
+            <button onClick={async () => {
+              try {
+                const XLSX = await import('xlsx');
+                const data = (activeFilter === 'All' ? rows : filtered).map(r => ({
+                  'ID': r.testCaseRefId || `TC-${r.id}`,
+                  'Name': r.name || '',
+                  'Category': r.category || '',
+                  'Module': r.module || '',
+                  'Status': r.status,
+                  'Severity': r.severity || '',
+                  'Priority': r.priority || '',
+                }));
+                const ws = XLSX.utils.json_to_sheet(data);
+                const wb = XLSX.utils.book_new();
+                XLSX.utils.book_append_sheet(wb, ws, activeFilter === 'All' ? 'All Results' : activeFilter);
+                XLSX.writeFile(wb, `${project.name.replace(/[^a-zA-Z0-9]/g, '_')}_${activeFilter}_Results.xlsx`);
+                toast('success', `Exported ${data.length} records to Excel`);
+              } catch { toast('error', 'Export failed'); }
+            }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 9, background: 'rgba(34,197,94,.08)', border: '1px solid rgba(34,197,94,.25)', color: '#22c55e', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}>
+              📊 Export Excel
+            </button>
+          )}
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '7px 14px', borderRadius: 9, background: 'var(--b2)', border: '1px solid var(--bd)', color: importing ? 'var(--t3)' : 'var(--tx)', fontSize: 13, fontWeight: 600, cursor: importing ? 'default' : 'pointer' }}>
+            {importing ? '⏳ Importing…' : '📂 Upload Report'}
+            <input type="file" accept=".xlsx,.csv,.xls" style={{ display: 'none' }} disabled={importing} onChange={e => handleUpload(e.target.files[0])} />
+          </label>
+        </div>
       </div>
 
       {uploadedFiles.length > 0 && (
@@ -595,8 +955,89 @@ function ExecutionTab({ project, toast }) {
         </Cd>
       )}
 
-      {/* ── Execution Overview Stats ── */}
-      {analysis?.total > 0 && (
+      {/* ── Filtered View (Passed / Failed / Skipped) ── */}
+      {activeFilter !== 'All' && (
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+            <button onClick={() => setActiveFilter('All')} style={{
+              background: 'none', border: 'none', cursor: 'pointer', color: 'var(--t2)', fontSize: 16, padding: '4px 6px', borderRadius: 8, transition: 'color .15s',
+            }} onMouseEnter={e => e.currentTarget.style.color = 'var(--tx)'} onMouseLeave={e => e.currentTarget.style.color = 'var(--t2)'}>←</button>
+            <span style={{ fontSize: 18, fontWeight: 800, color: 'var(--tx)' }}>
+              {activeFilter} Test Cases
+            </span>
+            <span style={{
+              fontSize: 12, fontWeight: 700, padding: '3px 12px', borderRadius: 8,
+              background: activeFilter === 'Passed' ? 'rgba(34,197,94,.1)' : activeFilter === 'Failed' ? 'rgba(255,77,77,.1)' : 'rgba(255,181,71,.1)',
+              color: activeFilter === 'Passed' ? '#22c55e' : activeFilter === 'Failed' ? 'var(--rd)' : 'var(--am)',
+            }}>{filtered.length} cases</span>
+          </div>
+
+          {filtered.length === 0 ? (
+            <Cd>
+              <div style={{ textAlign: 'center', padding: '60px 20px' }}>
+                <div style={{ fontSize: 48, marginBottom: 12, opacity: 0.4 }}>
+                  {activeFilter === 'Passed' ? '✓' : activeFilter === 'Failed' ? '✕' : '⏭'}
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--tx)', marginBottom: 6 }}>No {activeFilter} Test Cases</div>
+                <div style={{ fontSize: 13, color: 'var(--t3)', lineHeight: 1.6 }}>
+                  {activeFilter === 'Passed' && 'No test cases have passed yet. Run your tests to see results here.'}
+                  {activeFilter === 'Failed' && 'No failed test cases found. All tests are passing!'}
+                  {activeFilter === 'Skipped' && 'No skipped test cases. All tests have been executed.'}
+                </div>
+              </div>
+            </Cd>
+          ) : (
+            <Cd style={{ padding: 0, overflow: 'hidden' }}>
+              {/* Summary bar */}
+              <div style={{ padding: '14px 20px', background: 'var(--b2)', borderBottom: '1px solid var(--bd)', display: 'flex', gap: 20, fontSize: 12, color: 'var(--t2)' }}>
+                <span>Showing <strong style={{ color: 'var(--tx)' }}>{filtered.length}</strong> of {rows.length} total</span>
+                {activeFilter === 'Failed' && <span style={{ color: 'var(--rd)' }}>These test cases need attention</span>}
+                {activeFilter === 'Passed' && <span style={{ color: '#22c55e' }}>All these tests passed successfully</span>}
+              </div>
+              {/* Table header */}
+              <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 100px', gap: 8, padding: '10px 20px', borderBottom: '1px solid var(--bd)', fontSize: 11, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                <span>Test Case</span><span>Category</span><span>Module</span><span>Severity</span><span>Status</span>
+              </div>
+              {/* Rows */}
+              <div style={{ maxHeight: 500, overflowY: 'auto' }}>
+                {filtered.map((r, i) => (
+                  <div key={r.id} style={{
+                    display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 100px', gap: 8,
+                    padding: '12px 20px', alignItems: 'center',
+                    borderBottom: i < filtered.length - 1 ? '1px solid var(--bd)' : 'none',
+                    transition: 'background .15s',
+                  }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'var(--b2)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {r.name || `Test #${r.id}`}
+                      </div>
+                      {r.testCaseRefId && <div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 2, fontFamily: 'monospace' }}>{r.testCaseRefId}</div>}
+                    </div>
+                    <span style={{ fontSize: 12, color: 'var(--t2)' }}>{r.category || '—'}</span>
+                    <span style={{ fontSize: 12, color: 'var(--t2)' }}>{r.module || '—'}</span>
+                    <span style={{
+                      fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 5, display: 'inline-block', width: 'fit-content',
+                      background: r.severity === 'Critical' ? 'rgba(255,77,77,.1)' : r.severity === 'High' ? 'rgba(255,181,71,.1)' : 'rgba(200,230,74,.06)',
+                      color: r.severity === 'Critical' ? 'var(--rd)' : r.severity === 'High' ? 'var(--am)' : 'var(--t2)',
+                    }}>{r.severity || '—'}</span>
+                    <span style={{
+                      padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, textAlign: 'center',
+                      background: r.status === 'Passed' ? 'rgba(34,197,94,.1)' : r.status === 'Failed' ? 'rgba(255,77,77,.1)' : 'rgba(255,181,71,.1)',
+                      color: r.status === 'Passed' ? '#22c55e' : r.status === 'Failed' ? 'var(--rd)' : 'var(--am)',
+                    }}>{r.status}</span>
+                  </div>
+                ))}
+              </div>
+            </Cd>
+          )}
+        </div>
+      )}
+
+      {/* ── Execution Overview Stats (All view) ── */}
+      {activeFilter === 'All' && analysis?.total > 0 && (
         <>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
             <Cd style={{ padding: '18px 20px', textAlign: 'center' }}>
@@ -727,7 +1168,7 @@ function ExecutionTab({ project, toast }) {
         </>
       )}
 
-      {!loading && rows.length === 0 && !(analysis?.total > 0) ? (
+      {activeFilter === 'All' && !loading && rows.length === 0 && !(analysis?.total > 0) ? (
         <Cd>
           <div style={{ textAlign: 'center', padding: '48px 20px' }}>
             <div style={{ fontSize: 48, marginBottom: 12 }}>▶</div>
@@ -742,7 +1183,7 @@ function ExecutionTab({ project, toast }) {
             </label>
           </div>
         </Cd>
-      ) : rows.length > 0 && (
+      ) : activeFilter === 'All' && rows.length > 0 && (
       <Cd>
         <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx)', marginBottom: 14 }}>📋 Test Execution Log</div>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 18, paddingBottom: 18, borderBottom: '1px solid var(--bd)' }}>
@@ -1023,18 +1464,22 @@ export default function ProjectInnerPage({ project: initialProject, onBack, toas
   const [project, setProject] = useState(initialProject);
   const [tab, setTab] = useState('Overview');
   const [bugs, setBugs] = useState([]);
+  const [failedTestCases, setFailedTestCases] = useState([]);
 
   const hC = HEALTH_COLOR[project.health] || 'var(--t2)';
   const hIc = HEALTH_IC[project.health] || '◎';
 
   const load = useCallback(async () => {
     try {
-      const [pRes, bRes] = await Promise.all([
+      const [pRes, bRes, tcRes] = await Promise.all([
         getProject(project.id),
         getBugs({ projectId: project.id }),
+        getTestCases({ projectId: project.id }),
       ]);
       setProject(pRes.data);
       setBugs(bRes.data);
+      const allTc = Array.isArray(tcRes.data) ? tcRes.data : [];
+      setFailedTestCases(allTc.filter(tc => tc.testResult && tc.testResult.toLowerCase() === 'fail'));
     } catch {}
   }, [project.id]);
 
@@ -1042,27 +1487,38 @@ export default function ProjectInnerPage({ project: initialProject, onBack, toas
   useSocket({ 'project:updated': load, 'bug:created': load, 'bug:updated': load });
 
   const bd = useMemo(() => {
-    const all = bugs || project.bugs || [];
+    const realBugs = bugs || project.bugs || [];
+    // Include failed test cases as bugs
+    const allBugs = [
+      ...realBugs,
+      ...failedTestCases.map(tc => ({
+        severity: tc.severity === 'Critical' || (tc.priority && tc.priority.includes('P0')) ? 'Critical'
+          : tc.severity === 'High' || (tc.priority && tc.priority.includes('P1')) ? 'High'
+          : tc.severity === 'Medium' ? 'Medium' : 'Low',
+      })),
+    ];
     return {
-      critical: all.filter(b => b.severity === 'Critical').length,
-      high: all.filter(b => b.severity === 'High').length,
-      medium: all.filter(b => b.severity === 'Medium').length,
-      low: all.filter(b => b.severity === 'Low').length,
-      total: all.length,
+      critical: allBugs.filter(b => b.severity === 'Critical').length,
+      high: allBugs.filter(b => b.severity === 'High').length,
+      medium: allBugs.filter(b => b.severity === 'Medium').length,
+      low: allBugs.filter(b => b.severity === 'Low').length,
+      total: allBugs.length,
     };
-  }, [bugs, project.bugs]);
+  }, [bugs, project.bugs, failedTestCases]);
 
   const projectWithBD = { ...project, bugsBreakdown: bd };
 
+  // Lazy-load tabs — only render the active tab to avoid mounting all 9 at once
   const tabContent = {
     Overview: <OverviewTab project={projectWithBD} />,
     Details: <DetailsTab project={projectWithBD} bugs={bugs} />,
-    'Test Cases': <TestCasesTab project={project} toast={toast} />,
-    Execution: <ExecutionTab project={project} toast={toast} />,
-    'API Testing': <APITestingTab project={project} toast={toast} />,
-    Performance: <PerformanceTab />,
-    '404 Pages': <Pages404Tab />,
-    'Broken Links': <BrokenLinksTab />,
+    Bugs: tab === 'Bugs' ? <BugsTab bugs={bugs} project={project} toast={toast} /> : null,
+    'Test Cases': tab === 'Test Cases' ? <TestCasesTab project={project} toast={toast} /> : null,
+    Execution: tab === 'Execution' ? <ExecutionTab project={project} toast={toast} /> : null,
+    'API Testing': tab === 'API Testing' ? <APITestingTab project={project} toast={toast} /> : null,
+    Performance: tab === 'Performance' ? <PerformanceTab /> : null,
+    '404 Pages': tab === '404 Pages' ? <Pages404Tab /> : null,
+    'Broken Links': tab === 'Broken Links' ? <BrokenLinksTab /> : null,
   };
 
   return (

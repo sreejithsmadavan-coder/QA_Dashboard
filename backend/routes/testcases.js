@@ -12,4 +12,9 @@ router.put('/:id',               auth, ctrl.update);
 router.delete('/:id',            auth, ctrl.delete);
 router.post('/executions',       auth, ctrl.createExecution);
 
+// Tag-related endpoints
+const tagCtrl = require('../controllers/tagController');
+router.put('/:id/tags',          auth, tagCtrl.setTestCaseTags);
+router.get('/by-tag/:tagId',     auth, tagCtrl.getTestCasesByTag);
+
 module.exports = router;
