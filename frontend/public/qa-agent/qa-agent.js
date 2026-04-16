@@ -151,7 +151,7 @@ const QA_AGENT_HTML = `
       <label class="pchip on" id="chip-PERF"><input type="checkbox" checked onchange="syncChip('PERF',this)"><span class="pchip-lbl">Performance</span></label>
       <label class="pchip on" id="chip-SEO"><input type="checkbox" checked onchange="syncChip('SEO',this)"><span class="pchip-lbl">SEO</span></label>
       <label class="pchip on" id="chip-CONT"><input type="checkbox" checked onchange="syncChip('CONT',this)"><span class="pchip-lbl">Content</span></label>
-      <label class="pchip on" id="chip-EDGE"><input type="checkbox" checked onchange="syncChip('EDGE',this)"><span class="pchip-lbl">Edge Cases</span></label>
+      <!-- Edge cases are now embedded into every category -->
     </div>
   </div>
 
@@ -236,8 +236,8 @@ const QA_AGENT_HTML = `
           <option value="unreachable">Unreachable</option>
           <option value="external">External</option>
         </select>
-        <span class="pages-summary" id="pagesSummary"></span>
         <a class="pages-domain" id="pagesDomain" href="#" target="_blank" rel="noopener">Domain: —</a>
+        <span class="pages-summary" id="pagesSummary"></span>
         <button class="exp-btn" onclick="exportPagesCSV()">&#11015; CSV</button>
         <button class="exp-btn primary-btn" id="rescanBtn" onclick="scanPages()">&#8635; Rescan</button>
       </div>
@@ -262,7 +262,7 @@ const QA_AGENT_HTML = `
           <option value="">All categories</option>
           <option value="FN">Functional</option><option value="UIUX">UI/UX Testing</option><option value="SEC">Security</option>
           <option value="API">API Testing</option><option value="PERF">Performance</option><option value="SEO">SEO</option>
-          <option value="CONT">Content</option><option value="EDGE">Edge Cases</option>
+          <option value="CONT">Content</option>
         </select>
         <select class="tc-sel" id="tcPri" onchange="filterTCs()">
           <option value="">All priorities</option><option value="H">High</option><option value="M">Medium</option><option value="L">Low</option>
@@ -418,14 +418,13 @@ const STORE='qa_v8_state', RUNS_KEY='qa_v8_runs', APIKEY_KEY='qa_v8_apikey';
 let errCount=0, verifiedApiKey=null, currentAutoFile=null, qaAborted=false, isRunning=false, configLocked=false, pendingConfigAction=null, activeTimers=[];
 
 const CAT_DEFS={
-  FN:  {label:'Functional Testing', desc:'Positive/negative flows, form validation, boundary values, business logic, CRUD, auth flows, state transitions, error handling'},
-  UIUX:{label:'UI/UX Testing',     desc:'Layout alignment, spacing, typography, color accuracy, component states, responsiveness, dark mode, user journeys, task completion, navigation, empty/loading/error states, accessibility WCAG 2.1, keyboard navigation, touch targets >=44px'},
-  SEC: {label:'Security Testing',   desc:'OWASP Top 10 (A01-A10), XSS (reflected/stored/DOM), SQL injection, CSRF, IDOR, authentication bypass, session hijacking, insecure direct object references, security headers (CSP/HSTS/X-Frame-Options), sensitive data exposure, broken access control, cryptographic failures, SSRF, file upload vulnerabilities, rate limiting, brute force protection, JWT/token security, cookie flags (HttpOnly/Secure/SameSite), directory traversal, information disclosure, API key exposure in source'},
-  API: {label:'API Testing',        desc:'HTTP status codes 200/400/401/403/404/500, data rendering, error messages, timeout handling, pagination, concurrent requests'},
-  PERF:{label:'Performance',        desc:'Page load time, Core Web Vitals LCP/FID/CLS, lazy loading, image optimization, bundle size, memory leaks'},
-  SEO: {label:'SEO Testing',        desc:'Meta title/description, heading hierarchy, image alt tags, canonical, robots.txt, sitemap, structured data'},
-  CONT:{label:'Content Testing',    desc:'Spelling, grammar, sentence clarity, capitalization consistency, placeholder vs real content, number/date formats'},
-  EDGE:{label:'Edge Cases',         desc:'Empty states, max-length inputs, emoji/special chars, network failure, rapid clicks, session timeout'},
+  FN:  {label:'Functional Testing', desc:'Verify all navigation links redirect to correct pages. Verify header, footer, and logo navigation. Verify all buttons (CTA, Know More, Explore) perform expected actions. Verify internal and external links are not broken. Verify page refresh and direct URL access works. Verify browser back/forward navigation consistency. Verify forms accept valid inputs and submit successfully. Verify forms show proper validation for invalid inputs. Verify error messages are meaningful and user-friendly. Verify edge cases: empty input, long input, special characters, emoji. Verify duplicate actions are handled (no multiple submissions). Verify dynamic content loads correctly. Verify state persistence after navigation. Verify behavior when network is offline or unstable. Verify invalid URLs return proper error pages. Verify system does not crash on unexpected inputs. Verify fallback UI for failed components. Verify handling of empty or null data. Verify cache does not serve stale content. Verify hard refresh loads updated content.'},
+  UIUX:{label:'UI/UX Testing',     desc:'Verify UI matches expected design (alignment, spacing, layout). Verify consistent font, color, and branding across pages. Verify responsiveness across mobile (320/375/414px), tablet (768/1024px), and desktop (1280/1440/2560px). Verify no overlapping, clipping, or broken layouts. Verify hover states, focus states, and interaction feedback. Verify smooth scrolling and proper section transitions. Verify visibility and readability of all text (contrast, size). Verify images are properly aligned, scaled, and not distorted. Verify loading indicators and skeleton states. Verify full keyboard navigation support. Verify focus indicators are visible. Verify screen reader compatibility. Verify alt text for all images. Verify proper labeling of buttons and inputs. Verify contrast ratio meets WCAG 2.1 AA standards. Verify touch targets >=44px. Verify zoom 200% does not break layout. Verify orientation change (portrait/landscape). Verify broken images and missing assets.'},
+  SEC: {label:'Security Testing',   desc:'Verify input fields are protected against XSS attacks (reflected, stored, DOM-based, polyglot, SVG onload). Verify input fields are protected against SQL injection (OR 1=1, UNION SELECT, blind boolean, time-based). Verify special characters and scripts are sanitized. Verify HTTPS is enforced across all pages. Verify SSL certificate validity. Verify sensitive data is not exposed in frontend source or JS bundles. Verify secure headers (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy). Verify no API keys or tokens exposed in source. Verify unauthorized pages are not accessible. Verify URL parameters do not expose sensitive data. Verify CSRF protection on forms. Verify cookie flags (HttpOnly, Secure, SameSite). Verify CORS configuration. Verify directory traversal protection. Verify rate limiting on forms. Verify clickjacking protection. Verify open redirect prevention. Verify information disclosure (server version, stack traces, debug mode).'},
+  API: {label:'API Testing',        desc:'Verify API responses return correct status codes (200/201/400/401/403/404/500). Verify API response structure and schema consistency. Verify API handles invalid requests gracefully. Verify API error handling and fallback mechanisms. Verify API response time and latency. Verify no redundant or duplicate API calls. Verify API data integrity across UI. Verify auth: no token, invalid token, expired token, wrong role. Verify pagination boundaries. Verify concurrent duplicate requests. Verify malformed payloads and missing fields. Verify content-type negotiation.'},
+  PERF:{label:'Performance',        desc:'Verify page load time is within acceptable limits (<3s). Verify performance under slow network conditions (3G simulation). Verify no layout shift during loading (CLS<0.1). Verify Largest Contentful Paint (LCP<2.5s) is optimized. Verify minimal blocking scripts. Verify images are optimized and lazy loaded. Verify no memory leaks or excessive CPU usage. Verify stability under rapid interactions (scroll, click). Verify TTFB<600ms. Verify cache headers (Cache-Control, ETag). Verify gzip/brotli compression. Verify font loading behavior. Verify total requests per page. Verify first visit vs return visit performance.'},
+  SEO: {label:'SEO Testing',        desc:'Verify meta title and description are present, relevant, and correct length. Verify proper heading structure (H1, H2, H3 — no skipping). Verify each page has exactly one unique H1. Verify all image alt attributes are present and accurate. Verify canonical tags are implemented correctly. Verify URL structure is SEO-friendly. Verify sitemap.xml exists, is valid, and lists all pages. Verify robots.txt configuration. Verify no duplicate content issues. Verify pages are indexable. Verify OG tags and Twitter cards. Verify structured data/JSON-LD. Verify no broken internal links. Verify redirect chains <3 hops.'},
+  CONT:{label:'Content Testing',    desc:'Verify all text content is accurate and consistent. Verify no spelling or grammar errors. Verify no placeholder, dummy, or Lorem Ipsum content exists. Verify consistency of data across pages. Verify correct formatting of paragraphs, lists, headings. Verify numbers, statistics, and labels are accurate. Verify copyright year is current. Verify CTA text matches destination page. Verify phone numbers are clickable on mobile. Verify email addresses have mailto links. Verify consistent brand terminology. Verify no HTML entities showing as raw text. Verify no TODO/FIXME visible in content.'},
 };
 const SITE_DESC={
   corporate:'corporate website (about, services, team, contact, news)',
@@ -556,6 +555,10 @@ const INCIDENT_MEMORY={
     'Classic e-commerce bug: cart total recomputed on client but not server. Test: intercept /checkout and change line_item price → server must reject, not honour.',
     'Form re-submission on back button: order placed twice. Test: POST order, click back, click submit again — second attempt must be blocked or return the same order.',
     'Stale session after password change: old tabs keep working. Test: change password in tab A, verify tab B is logged out within 30s.',
+    'Leap-year bug: Feb 29 bookings fail in non-leap years. Test every date picker across Feb 28-Mar 1.',
+    'Unicode edge cases: emoji in username breaks rendering, RTL override (U+202E) in filenames, zero-width joiners in search.',
+    'Timezone at UTC boundary: event at 23:59 UTC shows on wrong day in UTC+14.',
+    'Precision at thousand-separator boundary: 999999.99 vs 1000000.00 formatting.',
   ],
   NEG:[
     'Mass-assignment via JSON body: POST /user with {"role":"admin"} → privilege escalation. Test every POST/PUT for unexpected fields.',
@@ -599,12 +602,6 @@ const INCIDENT_MEMORY={
     'Copyright year stale (hardcoded 2023 in 2026 footer).',
     'Internationalisation leaking: "[key.not.found]" visible to user in non-default locale.',
   ],
-  EDGE:[
-    'Leap-year bug: Feb 29 bookings fail in non-leap years. Test every date picker across Feb 28-Mar 1.',
-    'Unicode edge cases: emoji in username breaks rendering, RTL override (U+202E) in filenames, zero-width joiners in search.',
-    'Timezone at UTC boundary: event at 23:59 UTC shows on wrong day in UTC+14.',
-    'Precision at thousand-separator boundary: 999999.99 vs 1000000.00 formatting.',
-  ],
 };
 function incidentsForCategory(catId,limit=4){
   const list=INCIDENT_MEMORY[catId]||[];
@@ -622,18 +619,15 @@ const TECHNIQUE_GUIDE={
     'State Transition: every stateful object — test all valid transitions AND attempt every invalid one.',
     'Use Case: end-to-end journeys across 3+ pages, not isolated page checks.',
     'Error Guessing: null, empty, whitespace, zero, negative, huge, unicode, emoji, SQL keywords, script tags.',
+    'BVA Edge Cases: all numeric/date boundaries, including calendar edges (Feb 29, DST, UTC midnight).',
+    'Pairwise: multi-dimensional input grids (browser × locale × role × plan).',
+    'Locale Edge Cases: RTL text, >4-byte UTF-8, combining characters, Unicode normalisation mismatches.',
   ],
   NEG:[
     'EP: one representative per INVALID class (malformed email, wrong length, wrong type, unexpected unicode).',
     'Error Guessing: inputs that crash naive parsers (unterminated quote, backslash, null byte, BOM, zero-width joiner).',
     'Decision Tables: all illegal condition combos (expired coupon + out-of-stock + invalid address).',
     'State Transition: attempt every INVALID transition — must be rejected.',
-  ],
-  EDGE:[
-    'BVA: all numeric/date boundaries, including calendar edges (Feb 29, DST, UTC midnight).',
-    'Pairwise: multi-dimensional input grids (browser × locale × role × plan).',
-    'Error Guessing: locale extremes — RTL, >4-byte UTF-8, combining characters, Unicode normalisation mismatches.',
-    'Orthogonal Arrays: when combinations explode, reduce to orthogonal set covering all pairs.',
   ],
   SEC:[
     'Threat Model: for every page, name 3 attackers + their goals, write tests per goal.',
@@ -710,9 +704,9 @@ function crawlSiteViaHost(url,opts){
     const timeout=setTimeout(()=>{
       delete _crawlPending[reqId];
       reject(new Error('Crawl timed out — site may be slow or blocking the crawler'));
-    },120000);
+    },300000);
     _crawlPending[reqId]={resolve,reject,timeout};
-    _post('crawl-request',{reqId,url,maxPages:(opts&&opts.maxPages)||50,maxDepth:(opts&&opts.maxDepth)||2});
+    _post('crawl-request',{reqId,url,maxPages:(opts&&opts.maxPages)||1000,maxDepth:(opts&&opts.maxDepth)||3});
   });
 }
 function saveS(){try{localStorage.setItem(STORE,JSON.stringify(S));}catch(e){}_post('state-saved',S);}
@@ -1166,7 +1160,7 @@ function scanPages(){
   document.getElementById('es-pages').innerHTML='<div class="pages-loading"><span class="loader-spin"></span><span>Scanning pages on '+url.replace(/</g,'&lt;')+'...</span></div>';
   document.getElementById('c-pages').classList.add('hidden');
 
-  crawlSiteViaHost(url,{maxPages:80,maxDepth:2,deep:false}).then(function(crawl){
+  crawlSiteViaHost(url,{maxPages:1000,maxDepth:3,deep:false}).then(function(crawl){
     scannedPages=(crawl&&crawl.pages)||[];
     S.crawledPages=scannedPages;
     // Detect and store the resolved domain/base URL
@@ -1993,6 +1987,93 @@ function toggleAutoSendFields(){
   document.getElementById('autoSendFields').style.display=on?'block':'none';
 }
 
+// ── FORMAT PAGE ANALYSIS FOR AI PROMPT ───────────────────
+function formatPageForPrompt(p){
+  var line='  PAGE: '+(p.path||p.url)+(p.title?'  ['+p.title+']':'');
+  var a=p.pageAnalysis;
+  if(!a)return line+'\n    (no structural analysis available — page was discovered via sitemap only)';
+  var parts=[];
+
+  // Forms — most important for test case generation
+  if(a.forms&&a.forms.length){
+    a.forms.forEach(function(f){
+      var fieldDesc=(f.fields||[]).map(function(fl){
+        var s=fl.name||fl.placeholder||fl.label||fl.tag;
+        if(fl.type&&fl.type!=='text')s+='('+fl.type+')';
+        if(fl.required)s+='*';
+        if(fl.minlength||fl.maxlength)s+='['+( fl.minlength||'0')+'-'+(fl.maxlength||'∞')+']';
+        if(fl.min||fl.max)s+='{'+( fl.min||'')+'-'+(fl.max||'')+'}';
+        if(fl.pattern)s+=' pattern:'+fl.pattern;
+        if(fl.options)s+=' options:['+fl.options.slice(0,5).join('|')+']';
+        return s;
+      }).join(', ');
+      var submitText=(f.submitButtons||[]).join(', ')||'submit';
+      parts.push('FORM['+f.method+' '+(f.action||'self')+']: fields=['+fieldDesc+'] submit=['+submitText+']');
+    });
+  }
+
+  // Buttons/CTAs
+  if(a.buttons&&a.buttons.length){
+    var btnList=a.buttons.map(function(b){return b.text+(b.href?' → '+b.href:'');});
+    parts.push('BUTTONS/CTAs: '+btnList.join(', '));
+  }
+
+  // Navigation links
+  if(a.navLinks&&a.navLinks.length){
+    parts.push('NAV: '+a.navLinks.map(function(l){return l.text+'→'+l.href;}).join(', '));
+  }
+
+  // Headings
+  if(a.headings&&a.headings.length){
+    var hList=a.headings.map(function(h){return h.tag.toUpperCase()+': '+h.text;});
+    parts.push('HEADINGS: '+hList.join(' | '));
+  }
+
+  // Images
+  if(a.images){
+    parts.push('IMAGES: '+a.images.total+' total, '+a.images.withAlt+' with alt, '+a.images.withoutAlt+' missing alt'+(a.images.sample.some(function(i){return i.lazy;})?' (some lazy-loaded)':''));
+  }
+
+  // Interactive elements
+  if(a.interactive&&a.interactive.length){
+    parts.push('INTERACTIVE: '+a.interactive.join(', '));
+  }
+
+  // Links summary
+  if(a.links){
+    parts.push('LINKS: '+a.links.totalInternal+' internal, '+a.links.totalExternal+' external');
+  }
+
+  // Footer
+  if(a.footerLinks&&a.footerLinks.length){
+    parts.push('FOOTER: '+a.footerLinks.map(function(l){return l.text;}).join(', '));
+  }
+
+  // Meta issues
+  if(a.meta){
+    var issues=[];
+    if(!a.meta.description)issues.push('NO meta description');
+    if(!a.meta.ogTitle)issues.push('NO OG title');
+    if(!a.meta.ogImage)issues.push('NO OG image');
+    if(!a.meta.canonical)issues.push('NO canonical');
+    if(!a.meta.viewport)issues.push('NO viewport meta');
+    if(issues.length)parts.push('META-ISSUES: '+issues.join(', '));
+  }
+
+  // Embeds
+  if(a.embeds){
+    parts.push('EMBEDS: '+(a.embeds.scripts||0)+' scripts, '+(a.embeds.iframes||0)+' iframes');
+  }
+
+  if(parts.length){
+    // Cap total analysis to ~600 chars per page to stay within token budget
+    var analysisText=parts.join('\n    ');
+    if(analysisText.length>600)analysisText=analysisText.slice(0,597)+'...';
+    line+='\n    '+analysisText;
+  }
+  return line;
+}
+
 // ── PROMPT BUILDER ───────────────────────────────────────
 // opts.pageBatch: if provided, only use these pages (and request cases per-page)
 // opts.startIndex: starting TC number for ID sequencing across batches
@@ -2003,13 +2084,13 @@ function buildPrompt(catId,base,opts){
   const startIndex=opts.startIndex||1;
   // Inject the crawled page list (batched if pageBatch supplied)
   let pagesBlock='';
-  const activePages=pageBatch||(S.crawledPages&&S.crawledPages.length?S.crawledPages.slice(0,60):null);
+  const activePages=pageBatch||(S.crawledPages&&S.crawledPages.length?S.crawledPages:null);
   if(activePages&&activePages.length){
-    const lines=activePages.map(p=>'  - '+(p.path||p.url)+(p.title?'  ['+p.title+']':''));
+    const lines=activePages.map(p=>formatPageForPrompt(p));
     if(pageBatch){
-      pagesBlock='\n\nTARGET PAGES FOR THIS BATCH ('+activePages.length+' pages — generate ~'+Math.max(12,Math.floor(60/Math.max(1,activePages.length)))+' cases PER PAGE below, focused specifically on each page\u2019s unique functionality):\n'+lines.join('\n')+'\n\nIMPORTANT: Every test case MUST reference one of the pages above. Do NOT invent routes. Do NOT write generic cases that could apply to any page.';
+      pagesBlock='\n\nTARGET PAGES FOR THIS BATCH ('+activePages.length+' pages — the REAL page structure is provided below including actual forms, buttons, images, and interactive elements discovered by crawling. Write test cases for THESE REAL elements, not guessed ones.):\n'+lines.join('\n')+'\n\nIMPORTANT: Every test case MUST reference a real page above and test its ACTUAL elements (real form fields, real buttons, real images). Do NOT guess or invent elements that are not listed. If a page has a form with specific fields, test THOSE fields. If a page has specific buttons, test THOSE buttons.';
     }else{
-      pagesBlock='\n\nDISCOVERED PAGES ('+activePages.length+' crawled — generate test cases that cover THESE specific paths, not generic ones):\n'+lines.join('\n')+'\n\nIMPORTANT: Every test case MUST reference a real page from the list above. Do NOT invent pages that are not in the crawl.';
+      pagesBlock='\n\nDISCOVERED PAGES WITH REAL STRUCTURE ('+activePages.length+' crawled — the actual page elements are listed below):\n'+lines.join('\n')+'\n\nIMPORTANT: Write test cases based on the REAL elements listed above. Do NOT invent forms, buttons, or fields that are not in the analysis.';
     }
   }
   // Inject domain packs (industry-specific "things that break in this vertical")
@@ -2028,29 +2109,98 @@ function buildPrompt(catId,base,opts){
   // Inject per-category technique guide (which formal techniques to use)
   const techniqueBlock=techniqueGuideFor(catId);
   const extras={
-    FN:'Techniques: BVA, EP, State Transition, Decision Table, Use Case, Error Guessing.',
-    UIUX:'Layout: BVA on spacing, State Transition for component states (default>hover>focus>active>disabled>error>loading), fonts, colors, padding, alignment, responsive 8 breakpoints. UX: End-to-end user journeys, WCAG 2.1, keyboard navigation, focus management, touch targets >=44px, zoom 200%, screen reader, empty/loading/error states.',
-    SEC:'CRITICAL: Think and test like a senior security auditor with 12+ years of experience conducting penetration tests. Apply OWASP Top 10 (A01-A10) methodology systematically. Test: XSS (7 payloads: reflected, stored, DOM-based), SQL injection (5 payloads: OR 1=1, UNION SELECT, DROP TABLE, blind boolean, time-based), CSRF token validation, IDOR on all authenticated endpoints, authentication bypass (default creds, brute force, session fixation), security headers audit (CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy), sensitive data in page source/JS/network, cookie security (HttpOnly/Secure/SameSite flags), directory traversal, file upload restrictions, rate limiting on login/forms, JWT/token tampering, clickjacking, open redirects, information disclosure (server version, stack traces, debug mode).',
-    API:'All HTTP status codes. BVA on rate limits, pagination. Concurrent requests, malformed JSON, timeout.',
-    PERF:'BVA on load thresholds. Core Web Vitals: LCP<2.5s, FID<100ms, CLS<0.1. Lazy loading, bundle size.',
-    SEO:'EP on meta title length. H1 count exactly 1. H2/H3 hierarchy, img alt, canonical, robots.txt, sitemap.xml.',
-    CONT:'Spelling, grammar, sentence clarity, consistency, double spaces, placeholder vs real content.',
-    EDGE:'10000-char inputs, emoji, network cut, rapid clicks, session timeout.',
+    FN:'CROSS-CUTTING CHECKS (apply to EVERY page in this batch):\n• Navigation: all header/footer/logo links, breadcrumbs, CTAs, internal + external links, anchor links\n• Forms: valid submit, invalid inputs (empty, too long, special chars, emoji, SQL keywords, script tags), duplicate submission, autofill, paste vs type\n• State: browser back/forward, page refresh, direct URL access, deep-link without prior navigation, session persistence\n• Error handling: offline behavior, slow network, 404 for invalid URLs, fallback UI for failed components, empty/null data\n• Edge: rapid clicks, concurrent tab submissions, back button after submit, URL manipulation, cache staleness\n• Techniques: BVA, EP, State Transition, Decision Table, Use Case, Error Guessing',
+    UIUX:'CROSS-CUTTING CHECKS (apply to EVERY page in this batch):\n• Layout: alignment, spacing, padding, margins, grid consistency, z-index stacking\n• Typography: font family, size, weight, line-height, letter-spacing consistency\n• Colors: brand colors, contrast ratios WCAG AA (4.5:1 text, 3:1 large), dark/light mode\n• Responsive: test at 320/375/414/768/1024/1280/1440/2560px — no overflow, no clipping, no overlapping\n• States: hover, focus, active, disabled, loading, skeleton, empty, error states for every interactive element\n• Accessibility: keyboard-only navigation, tab order logical, focus indicators visible, screen reader labels, ARIA roles, touch targets >=44px, zoom 200%, orientation change\n• Interaction: smooth scroll, transitions, animations, scroll-to-top, sticky headers, dropdowns, modals, tooltips\n• Assets: images not distorted, SVGs scale, broken image fallback, lazy load placeholders',
+    SEC:'THINK LIKE A SENIOR PENTESTER. Apply OWASP Top 10 systematically to every page.\nCROSS-CUTTING CHECKS:\n• XSS: test every input/param with reflected, stored, DOM-based, polyglot, SVG onload payloads\n• Injection: SQL (5 payloads), command injection, template injection, CRLF, header injection\n• Auth: session management, cookie flags, CSRF tokens, brute force protection, account lockout\n• Headers: CSP, HSTS, X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy\n• Exposure: no API keys/tokens in source/JS/network, no server version, no stack traces, no debug mode\n• Access: unauthorized page access, direct URL manipulation, IDOR, privilege escalation\n• Transport: HTTPS enforced, SSL valid, mixed content blocked, CORS properly restricted',
+    API:'CROSS-CUTTING CHECKS:\n• Happy path: all CRUD operations return correct status codes and data\n• Validation: missing fields, wrong types, oversized payloads, malformed JSON, extra unknown fields\n• Auth: no token → 401, invalid → 401, expired → 401, wrong role → 403\n• Error handling: graceful errors with meaningful messages, no stack traces\n• Performance: response time, no duplicate calls, efficient pagination\n• Edge: concurrent requests, idempotency, rate limiting, content-type negotiation',
+    PERF:'CROSS-CUTTING CHECKS:\n• Core Web Vitals: LCP<2.5s, FID<100ms, CLS<0.1, TTFB<600ms per page\n• Network: 3G simulation, cache-cold vs cache-warm, first visit vs return visit\n• Assets: images optimized + lazy loaded, fonts not render-blocking, JS/CSS minified, gzip/brotli\n• Stability: no memory leaks on navigation, no jank on scroll, rapid interaction stability\n• Caching: proper Cache-Control/ETag headers, stale content not served after update',
+    SEO:'CROSS-CUTTING CHECKS:\n• Meta: unique title (50-60 chars) + description (150-160 chars) per page\n• Structure: exactly 1 H1, logical H2/H3 hierarchy (no skipping), semantic HTML\n• Images: all have alt text, OG image present and >200x200px\n• Technical: canonical URL, sitemap.xml valid, robots.txt correct, structured data valid\n• Links: no broken internal links, no redirect chains >3 hops, SEO-friendly URLs\n• Indexability: pages indexable, no accidental noindex, no duplicate content',
+    CONT:'CROSS-CUTTING CHECKS:\n• Accuracy: all text accurate, no spelling/grammar errors, consistent terminology\n• Completeness: no placeholder/Lorem Ipsum, no TODO/FIXME visible, no template tags showing\n• Formatting: proper paragraphs/lists/headings, consistent date/number/currency formats\n• Links: CTAs match destinations, phone numbers clickable on mobile, emails have mailto\n• Freshness: copyright year current, no outdated information, consistent data across pages\n• Encoding: no raw HTML entities (&amp; &nbsp;), no invisible Unicode, no markdown rendered as text',
   };
-  return 'Generate 60+ architect-grade test cases for "'+def.label+'" for this website.\n\n'+
-    'Site context: '+base+'\n'+
-    'Scope: '+def.desc+'\n'+
-    (extras[catId]||'')+pagesBlock+domainBlock+incidentBlock+techniqueBlock+'\n\n'+
-    'STYLE — write like a senior QA writing a plain-English checklist a tester can execute without training:\n'+
-    '• Every Scenario MUST start with "Verify that ..." — e.g. "Verify that the /cart page loads within 3 seconds on a normal connection".\n'+
-    '• Every Scenario MUST name a SPECIFIC path from the discovered pages list (not "all pages", not "site-wide").\n'+
-    '• Steps: 1-2 short sentences describing what the tester actually does. No pseudocode, no JSON, no curl commands.\n'+
-    '• Expected: ONE short sentence describing what success looks like. NO "verified via:" tails, NO academic oracle phrasing.\n'+
+  // Build site-wide summary from crawl data for generalized test cases
+  var siteSummary='';
+  var allCrawled=S.crawledPages||[];
+  if(allCrawled.length>1){
+    var totalPages=allCrawled.length;
+    var pagesWithForms=allCrawled.filter(function(p){return p.pageAnalysis&&p.pageAnalysis.forms&&p.pageAnalysis.forms.length;});
+    var pagesWithImages=allCrawled.filter(function(p){return p.pageAnalysis&&p.pageAnalysis.images;});
+    var totalImages=pagesWithImages.reduce(function(s,p){return s+(p.pageAnalysis.images.total||0);},0);
+    var totalMissingAlt=pagesWithImages.reduce(function(s,p){return s+(p.pageAnalysis.images.withoutAlt||0);},0);
+    var pagesWithInteractive=allCrawled.filter(function(p){return p.pageAnalysis&&p.pageAnalysis.interactive&&p.pageAnalysis.interactive.length;});
+    var interactiveTypes={};
+    pagesWithInteractive.forEach(function(p){(p.pageAnalysis.interactive||[]).forEach(function(t){interactiveTypes[t]=(interactiveTypes[t]||0)+1;});});
+    var pagesNoH1=allCrawled.filter(function(p){return p.pageAnalysis&&p.pageAnalysis.headings&&!p.pageAnalysis.headings.some(function(h){return h.tag==='h1';});});
+    var pagesNoMeta=allCrawled.filter(function(p){return p.pageAnalysis&&p.pageAnalysis.meta&&!p.pageAnalysis.meta.description;});
+    var pagesNoCanonical=allCrawled.filter(function(p){return p.pageAnalysis&&p.pageAnalysis.meta&&!p.pageAnalysis.meta.canonical;});
+
+    siteSummary='\n\nSITE-WIDE SUMMARY (use this to write GENERALIZED test cases that validate across ALL '+totalPages+' pages at once):\n'+
+      '• Total pages crawled: '+totalPages+'\n'+
+      '• Pages with forms: '+pagesWithForms.length+(pagesWithForms.length?' — ['+pagesWithForms.slice(0,10).map(function(p){return p.path;}).join(', ')+']':'')+'\n'+
+      '• Total images across site: '+totalImages+', missing alt text: '+totalMissingAlt+'\n'+
+      '• Pages with interactive elements: '+pagesWithInteractive.length+' — types: '+Object.keys(interactiveTypes).map(function(k){return k+'('+interactiveTypes[k]+')';}).join(', ')+'\n'+
+      '• Pages missing H1: '+pagesNoH1.length+(pagesNoH1.length?' — ['+pagesNoH1.slice(0,8).map(function(p){return p.path;}).join(', ')+']':'')+'\n'+
+      '• Pages missing meta description: '+pagesNoMeta.length+(pagesNoMeta.length?' — ['+pagesNoMeta.slice(0,8).map(function(p){return p.path;}).join(', ')+']':'')+'\n'+
+      '• Pages missing canonical: '+pagesNoCanonical.length+(pagesNoCanonical.length?' — ['+pagesNoCanonical.slice(0,8).map(function(p){return p.path;}).join(', ')+']':'')+'\n'+
+      '• All page paths: '+allCrawled.slice(0,100).map(function(p){return p.path;}).join(', ')+(allCrawled.length>100?' ... and '+(allCrawled.length-100)+' more':'');
+  }
+
+  // Adaptive strategy based on site type
+  var stype=S.stype||'corporate';
+  const ADAPTIVE_STRATEGY={
+    corporate:'Corporate Website → Focus heavily on content accuracy, branding consistency, navigation structure, contact forms, team/about page data, news/blog freshness, service descriptions.',
+    ecommerce:'E-commerce → Add cart operations, checkout flow, payment validation, pricing accuracy, product filtering/sorting, inventory status, coupon/discount logic, order tracking, wishlist, reviews, breadcrumbs.',
+    portfolio:'Portfolio → Validate visuals, media rendering, project case studies, image galleries, video playback, skills/experience accuracy, responsiveness of portfolio grid.',
+    blog:'Blog/Content → Validate readability, SEO per article, content structure, category/tag filtering, pagination, search functionality, social share buttons, comment system, author pages, RSS feed.',
+    saas:'SaaS/Web App → Validate login/signup workflows, dashboard data accuracy, settings persistence, role-based access, billing/subscription flows, notification system, export/import, onboarding.',
+    landing:'Landing Page → Validate conversion flows, CTA tracking, form submissions, A/B test elements, hero section, pricing table, testimonials, social proof, sticky nav, scroll animations.',
+    edu:'Educational Platform → Validate course flow, lesson navigation, quiz/assessment logic, progress tracking, certificate generation, enrollment process, video player, search.',
+    marketplace:'Marketplace → Validate multi-user interactions, listing CRUD, seller profiles, search + filters, cart from multiple sellers, messaging, ratings/reviews, dispute flow.',
+    social:'Social Network → Validate feed rendering, follow/unfollow, messaging, notifications, profile CRUD, media uploads, real-time updates, privacy settings, blocking.',
+    media:'Media/News → Validate content freshness, loading speed, video/audio playback, category navigation, breaking news banner, subscription paywall, share functionality.',
+    booking:'Booking System → Validate date/time selection, availability logic, booking confirmation, payment processing, cancellation/rescheduling, email notifications, calendar sync.',
+    dashboard:'Admin Dashboard → Validate data accuracy in charts/tables, filter/sort operations, role-based permissions, CRUD operations, bulk actions, export, real-time updates, audit logs.',
+    others:'Custom website — analyze each page\'s unique functionality and test thoroughly.',
+  };
+  const adaptiveNote=ADAPTIVE_STRATEGY[stype]||ADAPTIVE_STRATEGY.others;
+
+  return 'Act as a Senior QA Engineer with 15+ years of experience. Perform EXHAUSTIVE end-to-end "'+def.label+'" for this website.\n\n'+
+    'YOUR OBJECTIVE: Achieve MAXIMUM possible test coverage using BOTH generalized site-wide checks AND page-specific checks.\n\n'+
+    'Site type: '+adaptiveNote+'\n'+
+    'Site context: '+base+'\n\n'+
+    'SCOPE — what to verify:\n'+def.desc+'\n\n'+
+    (extras[catId]||'')+siteSummary+pagesBlock+domainBlock+incidentBlock+techniqueBlock+'\n\n'+
+    'TEST CASE STRATEGY — TWO TYPES OF TEST CASES (BOTH ARE MANDATORY):\n\n'+
+    'TYPE 1: GENERALIZED SITE-WIDE TEST CASES\n'+
+    'These test cases validate a single concern across ALL crawled pages at once. They are the most efficient way to catch widespread issues.\n'+
+    'Examples of generalized test cases:\n'+
+    '• "Verify that all '+allCrawled.length+' crawled pages load with HTTP 200 status" → Steps: Navigate to each page path listed in the crawl. → Expected: Every page returns 200 OK with no server errors.\n'+
+    '• "Verify that no internal links across the site return 404" → Steps: Click every internal link on every page. → Expected: All internal links resolve to valid pages.\n'+
+    '• "Verify that all images across the site have alt text" → Steps: Inspect every <img> tag on all pages. → Expected: No image is missing alt text.\n'+
+    '• "Verify that every page has exactly one H1 tag" → Steps: Check heading structure on each page. → Expected: Each page has one and only one H1.\n'+
+    '• "Verify that all forms across the site validate required fields" → Steps: Submit each form with empty required fields. → Expected: Validation errors shown for all required fields.\n'+
+    '• "Verify that the header/footer is consistent across all pages" → Steps: Compare header and footer on every page. → Expected: Same navigation links, logo, and footer content on all pages.\n'+
+    '• "Verify that no page exposes sensitive data in HTML source" → Steps: View page source on all pages. → Expected: No API keys, tokens, passwords, or debug info in source.\n\n'+
+    'Write generalized cases for: page loading, broken links, 404 checks, redirects, image alt text, heading structure, meta tags, security headers, form validation, navigation consistency, footer consistency, responsive layout, HTTPS enforcement, performance thresholds, accessibility basics, content consistency, and any other cross-cutting concern.\n\n'+
+    'TYPE 2: PAGE-SPECIFIC TEST CASES\n'+
+    'These test cases target unique functionality found on specific pages (forms with specific fields, unique interactive elements, page-specific content, specific CTAs).\n'+
+    'Write these ONLY for pages that have unique elements — do NOT repeat what generalized cases already cover.\n'+
+    'Examples: "Verify that the /contact form rejects invalid email format in the email field" (specific field on specific page).\n\n'+
+    'ADVANCED TEST STRATEGY (MANDATORY):\n'+
+    '• Simulate real user behavior (rapid clicks, scroll, navigation patterns)\n'+
+    '• Combine multiple scenarios (slow network + interaction, offline + form submit)\n'+
+    '• Test BOTH happy path AND failure scenarios for every feature\n'+
+    '• Test cache behavior (stale content, hard refresh)\n'+
+    '• Test cross-browser considerations (Chrome, Firefox, Safari, Edge)\n\n'+
+    'STYLE — write like a senior QA engineer writing an actionable checklist:\n'+
+    '• Every test case MUST start with "Verify that ..."\n'+
+    '• For generalized cases: reference "all pages" or "all forms" with the total count (e.g., "Verify that all '+allCrawled.length+' pages load within 3 seconds")\n'+
+    '• For page-specific cases: name the SPECIFIC path (e.g., "Verify that the /contact form...")\n'+
+    '• Steps: 1-2 short sentences describing what the tester actually does. Plain English, no code.\n'+
+    '• Expected: ONE short sentence describing what success looks like.\n'+
     '• Priority: H = critical/blocker, M = important, L = nice-to-have.\n'+
-    '• Cover: page load, navigation, header/footer, UI/design, typography, content, responsiveness, performance, interaction, and category-specific concerns.\n'+
-    '• Write 12-20 cases per page in this batch, spanning functional/UI/content/interaction checks.\n\n'+
-    'Output ONLY test cases — no intro, no section headers, no summary. One per line in this exact format (pipe-separated, exactly 5 columns):\n'+
-    catId+'-'+String(startIndex).padStart(3,'0')+' | Verify that <specific action on a real /path> | <1-2 sentence steps> | <one short expected-result sentence> | <H|M|L>\n'+
+    '• Write as many test cases as the functionality demands — no artificial limits.\n\n'+
+    'Output ONLY test cases — no intro, no section headers, no summary, no explanations. One per line in this exact pipe-separated format (exactly 5 columns):\n'+
+    catId+'-'+String(startIndex).padStart(3,'0')+' | Verify that <...> | <1-2 sentence steps> | <one short expected-result sentence> | <H|M|L>\n'+
     'Continue numbering sequentially from '+catId+'-'+String(startIndex).padStart(3,'0')+'. No other text.';
 }
 
@@ -2102,17 +2252,9 @@ function pathMatchesCrawl(candidate,crawlSet){
   }
   return false;
 }
-// Boilerplate phrases the model loves to use when it wants to avoid naming a
-// real page. If a scenario starts with one of these, we strip it AND require
-// a real path later in the line — no silent acceptance.
-const BOILERPLATE_PREFIX_RE=/^\s*(all\s+pages?|every\s+(page|endpoint|route)|site[-\s]?wide|global(ly)?|the\s+(whole\s+)?site|across\s+(all|the)\s+(pages?|site)|any\s+page)\s*[-—:|]\s*/i;
-function stripBoilerplatePrefix(line){
-  // Only touch the "scenario" column (index 1 of the pipe-separated line)
-  const parts=line.split('|');
-  if(parts.length<2)return line;
-  parts[1]=parts[1].replace(BOILERPLATE_PREFIX_RE,'').trim();
-  return parts.join('|');
-}
+// Detect generalized/site-wide test cases that should NOT be filtered out
+const GENERALIZED_RE=/all\s+(\d+\s+)?(crawled\s+)?pages?|every\s+(crawled\s+)?page|all\s+forms?|all\s+images?|all\s+links?|all\s+internal\s+links?|all\s+external\s+links?|across\s+(all|the)\s+(pages?|site)|site[-\s]?wide|no\s+(page|link|image|form)\s+(returns?|shows?|has|is)|entire\s+site|all\s+\d+\s+pages?/i;
+
 function filterCasesByCrawl(rawText,catId){
   if(!rawText)return {text:rawText,kept:0,dropped:0};
   const crawlSet=buildCrawledPathSet();
@@ -2123,14 +2265,11 @@ function filterCasesByCrawl(rawText,catId){
   let dropped=0;
   for(let line of lines){
     if(!idRe.test(line)){kept.push(line);continue;}
-    // Strip generic "All pages — …" style prefixes first
-    line=stripBoilerplatePrefix(line);
+    // Allow generalized site-wide test cases (e.g., "Verify all 778 pages load correctly")
+    if(GENERALIZED_RE.test(line)){kept.push(line);continue;}
     const paths=extractPathsFromText(line);
     if(!paths.length){
-      // STRICT: every case must reference a real crawled path. No more
-      // "generic target" exception for SEC/PERF/API — those tests still
-      // need to name a page (e.g. "HSTS header on /" instead of "HSTS
-      // site-wide"). Drop unconditionally.
+      // No specific path AND not a generalized case — drop it
       dropped++;
       continue;
     }
@@ -2169,7 +2308,7 @@ function renumberTestCases(text,catId){
 async function selfCritiqueTestCases(catId,rawText){
   if(!rawText||rawText.split('\n').filter(l=>l.trim().match(new RegExp('^'+catId+'-\\d+'))).length<5)return rawText;
   const pageList=(S.crawledPages&&S.crawledPages.length)
-    ?S.crawledPages.slice(0,60).map(p=>'  - '+(p.path||p.url)+(p.title?'  ['+p.title+']':'')).join('\n')
+    ?S.crawledPages.map(p=>formatPageForPrompt(p)).join('\n')
     :'  (none — crawl failed, only cross-cutting security/perf/API cases are acceptable)';
   const critiquePrompt=[
     'You are a principal QA architect doing strict code review on test cases generated by a junior. Your ONLY job is to make this test suite sharper without changing its format.',
@@ -2178,15 +2317,16 @@ async function selfCritiqueTestCases(catId,rawText){
     pageList,
     '',
     'REVIEW RULES (apply in order — delete before you rewrite):',
-    '1. DELETE every case that references a page/path/route NOT in the list above. No exceptions, no guessing. If the case says /login and /login is not in the list, delete it — do NOT rewrite it to "the home page". EVERY case — including security, performance, and API cases — MUST name a SPECIFIC path from the list. Write "HSTS header on / (home)" not "HSTS site-wide". Write "Rate limit on POST /contact-us" not "Rate limit on all endpoints". NO generic targets, NO "all pages", NO "site-wide", NO "every endpoint". If a test applies to multiple pages, write it once per page.',
-    '2. DELETE any case generic enough to apply to "any website" (no concrete page, no concrete field, no concrete invariant).',
+    '1. KEEP generalized site-wide cases (e.g., "Verify that all 500 pages load correctly", "Verify no broken links across the site"). These are VALID and efficient. Do NOT split them into per-page cases.',
+    '2. DELETE any page-specific case that references a path NOT in the list above. If the case says /login and /login is not in the list, delete it.',
     '3. DELETE duplicates — same scenario phrased differently.',
-    '4. REWRITE every Scenario to start with "Verify that ..." and name a SPECIFIC crawled path (e.g. "Verify that the /contact-us page loads within 3 seconds"). Plain English, no academic tone.',
-    '5. REWRITE every Expected Result into ONE short sentence describing what success looks like. DELETE any " — verified via: ..." tails or pseudocode. No oracle jargon.',
-    '6. REWRITE Steps into 1-2 short natural sentences describing what the tester does. No curl commands, no JSON, no selectors unless they are obvious.',
-    '7. UPGRADE priorities: only truly release-blocking cases should be H. Ruthlessly downgrade nice-to-haves to L.',
-    '8. ADD cases that cover page load, navigation/header, UI/design, typography, content, responsiveness, performance, and interaction on each REAL page above.',
-    '9. Keep at LEAST 30 cases after the deletions. Keep the EXACT pipe-separated 5-column format: '+catId+'-001 | Verify that <action on /path> | <short steps> | <short expected> | H|M|L',
+    '4. REWRITE every Scenario to start with "Verify that ...". Plain English, no academic tone.',
+    '5. REWRITE every Expected Result into ONE short sentence. DELETE any " — verified via: ..." tails.',
+    '6. REWRITE Steps into 1-2 short natural sentences. No curl commands, no JSON.',
+    '7. UPGRADE priorities: only truly release-blocking cases should be H.',
+    '8. ADD missing generalized cases for: broken links, 404 checks, image alt text, heading structure, meta tags, responsive layout, security headers, form validation patterns — if not already covered.',
+    '9. ADD page-specific cases for pages with unique forms, CTAs, or interactive elements not covered by generalized cases.',
+    '10. Keep the EXACT pipe-separated 5-column format: '+catId+'-001 | Verify that <...> | <short steps> | <short expected> | H|M|L. Do NOT reduce the total count.',
     '',
     'INPUT TEST CASES:',
     rawText.slice(0,12000),
@@ -2233,6 +2373,8 @@ async function startQA(resume=false){
   qaAborted=false;isRunning=true;configLocked=true;postRunState(true);
   document.getElementById('runBtn').textContent='RUNNING';document.getElementById('runBtn').classList.add('running');document.getElementById('runBtn').disabled=true;
   document.getElementById('resumeBtn').disabled=true;setDot('run','RUNNING');
+  // Auto-switch to Test Cases tab so user sees results as they stream in
+  sw('tcs');
 
   const siteDesc=SITE_DESC[S.stype]||S.stype;
   // Register run early so it appears in Previous Runs even if interrupted.
@@ -2276,13 +2418,13 @@ async function startQA(resume=false){
     try{
       setProg('Crawling site...',2,'sitemap + BFS + __NEXT_DATA__');
       log('Discovering pages on '+url+' (sitemap → BFS → Next.js data → optional Playwright)...','info');
-      let crawl=await crawlSiteViaHost(url,{maxPages:80,maxDepth:2,deep:false});
+      let crawl=await crawlSiteViaHost(url,{maxPages:1000,maxDepth:3,deep:false});
       // If the static crawl found very few pages, try once more with deep=true
       // to invoke the optional Playwright fallback (no-op if not installed).
       if(crawl&&(!crawl.pages||crawl.pages.length<5)){
         if(crawl.playwrightAvailable){
           log('Static crawl found '+((crawl.pages&&crawl.pages.length)||0)+' page(s) — escalating to Playwright deep crawl...','warn');
-          const deep=await crawlSiteViaHost(url,{maxPages:80,maxDepth:2,deep:true});
+          const deep=await crawlSiteViaHost(url,{maxPages:1000,maxDepth:3,deep:true});
           if(deep&&deep.pages&&deep.pages.length>crawl.pages.length)crawl=deep;
         }else{
           log('Static crawl found '+((crawl.pages&&crawl.pages.length)||0)+' page(s). Playwright is NOT installed — run `npm i playwright && npx playwright install chromium` in the backend to enable SPA deep-crawl.','warn');
@@ -2349,7 +2491,7 @@ async function startQA(resume=false){
     setDot('run','Running: '+shortLabel);
     log('Starting: '+stepLabel,'info');
     // Dynamic loader — heavier categories get slower progress
-    const weight={SEC:0.6,UIUX:0.8,FN:0.9,API:1.0,PERF:1.2,SEO:1.2,CONT:1.3,EDGE:1.1};
+    const weight={SEC:0.6,UIUX:0.8,FN:0.9,API:1.0,PERF:1.2,SEO:1.2,CONT:1.3};
     const speed=(weight[step]||1.0)*0.7; // lower = slower progress
     const interval=500+Math.round(Math.random()*200);
     const stepTimer=setInterval(()=>{if(innerPct<92){innerPct+=Math.random()*speed+0.5;setProg('Running: '+stepLabel,basePct+stepRange*(Math.min(innerPct,92)/100),'Step '+(i+1)+'/'+totalSteps);}},interval);activeTimers.push(stepTimer);
@@ -2371,12 +2513,12 @@ async function startQA(resume=false){
       // call the AI once per batch so every page gets real coverage.
       // Otherwise fall back to the single-call path.
       const crawlList=(S.crawledPages||[]);
-      const BATCH_SIZE=4; // 4 pages per AI call
+      const BATCH_SIZE=8; // 8 pages per AI call
       const MIN_FOR_BATCH=5;
       const shouldBatch=crawlList.length>=MIN_FOR_BATCH;
       text='';
       if(shouldBatch){
-        const pagesToCover=crawlList.slice(0,60);
+        const pagesToCover=crawlList;
         const batches=[];
         for(let bi=0;bi<pagesToCover.length;bi+=BATCH_SIZE){
           batches.push(pagesToCover.slice(bi,bi+BATCH_SIZE));
@@ -2950,9 +3092,9 @@ async function renderCanonicalReport(results){
   const testedCats=S.cats||[];
 
   // Map our cat IDs to canonical TC-prefix and tab names
-  const catToPrefix={FN:'TC-FN',UIUX:'TC-UI',SEC:'TC-SEC',API:'TC-API',PERF:'TC-PERF',SEO:'TC-FN',CONT:'TC-FN',EDGE:'TC-FN'};
-  const catToType={FN:'Functional',UIUX:'UI/UX',SEC:'Security',API:'API',PERF:'Performance',SEO:'SEO',CONT:'Content',EDGE:'Edge Cases'};
-  const catToBugType={FN:'fn',UIUX:'ui',SEC:'sec',API:'api',PERF:'perf',SEO:'fn',CONT:'fn',EDGE:'fn'};
+  const catToPrefix={FN:'TC-FN',UIUX:'TC-UI',SEC:'TC-SEC',API:'TC-API',PERF:'TC-PERF',SEO:'TC-FN',CONT:'TC-FN'};
+  const catToType={FN:'Functional',UIUX:'UI/UX',SEC:'Security',API:'API',PERF:'Performance',SEO:'SEO',CONT:'Content'};
+  const catToBugType={FN:'fn',UIUX:'ui',SEC:'sec',API:'api',PERF:'perf',SEO:'fn',CONT:'fn'};
 
   // Build test cases with proper TC- prefixed IDs for the canonical template
   const mappedTCs=[];
@@ -3015,7 +3157,7 @@ async function renderCanonicalReport(results){
     PERF:{icon:'\\u26A1',title:'Performance',scoreMax:20,items:['Optimize load times','Enable lazy loading','Compress images']},
     SEO: {icon:'\\uD83D\\uDD0D',title:'SEO',scoreMax:15,items:['Add structured data','Review meta descriptions']},
     CONT:{icon:'\\uD83D\\uDCDD',title:'Content Quality',scoreMax:15,items:['Fix spelling/grammar issues','Review placeholder content']},
-    EDGE:{icon:'\\u26A0',title:'Edge Case Handling',scoreMax:15,items:['Handle empty states','Validate extreme inputs']}
+    FN_EDGE:{icon:'\\u26A0',title:'Edge Case Coverage (embedded)',scoreMax:15,items:['Edge cases covered within each category','Boundary/extreme/unusual inputs tested per page']}
   };
   const improvements=[];
   testedCats.forEach(function(c){
