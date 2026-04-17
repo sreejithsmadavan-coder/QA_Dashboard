@@ -132,6 +132,11 @@
 .qa-agent .tab-err-dot.blink{animation:qa-bx-blink 1s ease-in-out infinite}
 @keyframes qa-bx-blink{0%,100%{opacity:1}50%{opacity:.3}}
 .qa-agent .tc{flex:1;overflow-y:auto;padding:14px}
+.qa-agent .mobile-soon{display:flex;flex-direction:column;align-items:center;text-align:center;gap:8px;padding:18px 10px;border:1px dashed var(--border);border-radius:8px;background:var(--surface);color:var(--muted)}
+.qa-agent .mobile-soon svg{color:var(--accent);opacity:.75}
+.qa-agent .mobile-soon h3{margin:2px 0 0;font-size:13px;font-weight:600;color:var(--text);letter-spacing:.02em}
+.qa-agent .mobile-soon p{margin:0;font-size:11px;line-height:1.5;color:var(--muted)}
+.qa-agent .mobile-soon p b{color:var(--text)}
 .qa-agent .es{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;gap:10px;color:var(--muted);text-align:center}
 .qa-agent .es h3{font-size:15px;color:var(--text);opacity:.4;font-weight:400}
 .qa-agent .es p{font-size:12px;max-width:300px;line-height:1.6}

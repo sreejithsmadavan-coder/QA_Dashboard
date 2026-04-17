@@ -106,23 +106,38 @@ db.sequelize.sync().then(async () => {
   } catch (e) {}
   console.log('✓ Test cases schema migrated');
 
-  // Migrate: add OTP columns to users table
-  for (const [col, type] of [['resetOtp', 'NVARCHAR(255)'], ['resetOtpExpiry', 'BIGINT']]) {
+  // Migrate: add OTP columns to users table (dialect-aware)
+  const dialect = db.sequelize.getDialect();
+  if (dialect === 'mssql') {
+    for (const [col, type] of [['resetOtp', 'NVARCHAR(255)'], ['resetOtpExpiry', 'BIGINT']]) {
+      try {
+        await db.sequelize.query(`IF COL_LENGTH('users', '${col}') IS NULL ALTER TABLE users ADD [${col}] ${type} NULL;`);
+      } catch (e) {}
+    }
+    // Fix: ensure resetOtpExpiry is BIGINT (drop DATETIME version if exists)
     try {
-      await db.sequelize.query(`IF COL_LENGTH('users', '${col}') IS NULL ALTER TABLE users ADD [${col}] ${type} NULL;`);
+      const colInfo = await db.sequelize.query(
+        `SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='users' AND COLUMN_NAME='resetOtpExpiry'`,
+        { type: db.sequelize.QueryTypes.SELECT }
+      );
+      if (colInfo.length && colInfo[0].DATA_TYPE !== 'bigint') {
+        await db.sequelize.query(`ALTER TABLE users DROP COLUMN [resetOtpExpiry];`);
+        await db.sequelize.query(`ALTER TABLE users ADD [resetOtpExpiry] BIGINT NULL;`);
+      }
+    } catch (e) {}
+  } else if (dialect === 'sqlite') {
+    try {
+      const cols = await db.sequelize.query(`PRAGMA table_info(users);`, { type: db.sequelize.QueryTypes.SELECT });
+      const names = cols.map(c => c.name);
+      if (!names.includes('resetOtp'))       await db.sequelize.query(`ALTER TABLE users ADD COLUMN resetOtp TEXT;`);
+      if (!names.includes('resetOtpExpiry')) await db.sequelize.query(`ALTER TABLE users ADD COLUMN resetOtpExpiry INTEGER;`);
+    } catch (e) {}
+  } else if (dialect === 'postgres') {
+    try {
+      await db.sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "resetOtp" VARCHAR(255);`);
+      await db.sequelize.query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS "resetOtpExpiry" BIGINT;`);
     } catch (e) {}
   }
-  // Fix: ensure resetOtpExpiry is BIGINT (drop DATETIME version if exists)
-  try {
-    const colInfo = await db.sequelize.query(
-      `SELECT DATA_TYPE FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='users' AND COLUMN_NAME='resetOtpExpiry'`,
-      { type: db.sequelize.QueryTypes.SELECT }
-    );
-    if (colInfo.length && colInfo[0].DATA_TYPE !== 'bigint') {
-      await db.sequelize.query(`ALTER TABLE users DROP COLUMN [resetOtpExpiry];`);
-      await db.sequelize.query(`ALTER TABLE users ADD [resetOtpExpiry] BIGINT NULL;`);
-    }
-  } catch (e) {}
 
   // Migrate: create chat_messages, notifications, audit_logs_v2 tables if they don't exist
   const newTables = [
