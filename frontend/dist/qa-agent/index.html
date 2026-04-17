@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>QA Agent</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="qa-agent.css">
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: var(--bg); }
+  /* Map module palette to QA Nexus theme (dark default) */
+  .qa-agent {
+    --bg:#121418;
+    --surface:#1A1D23;
+    --surface2:#1F2229;
+    --border:#2A2D35;
+    --accent:#C8E64A;
+    --accent2:#FFB547;
+    --accent3:#A78BFA;
+    --success:#4AE6C8;
+    --warn:#FFB547;
+    --danger:#FF4D4D;
+    --text:#E8E8EC;
+    --muted:#9096A8;
+    --sans:'DM Sans', sans-serif;
+    font-family:'DM Sans', sans-serif;
+  }
+  /* Light theme override applied via ?theme=light */
+  html.light .qa-agent {
+    --bg:#F0F2F7;
+    --surface:#FFFFFF;
+    --surface2:#F5F6FA;
+    --border:#E2E4EA;
+    --accent:#8aab10;
+    --accent2:#d97706;
+    --accent3:#7c3aed;
+    --success:#0e9f6e;
+    --warn:#d97706;
+    --danger:#dc2626;
+    --text:#1A1D23;
+    --muted:#6B7080;
+  }
+  /* Use DM Sans everywhere instead of IBM Plex Sans, keep mono for code feel */
+  .qa-agent, .qa-agent * { font-family:'DM Sans', sans-serif !important; }
+  .qa-agent .logo, .qa-agent .tstat, .qa-agent .status-pill,
+  .qa-agent .stop-btn, .qa-agent .slbl, .qa-agent .nbtn,
+  .qa-agent .pchip-lbl, .qa-agent .pnum, .qa-agent .pbadge,
+  .qa-agent .prog-lbl, .qa-agent .prog-sub, .qa-agent .btn,
+  .qa-agent .tab, .qa-agent .rh-title, .qa-agent .rh-count,
+  .qa-agent .rb, .qa-agent .ll, .qa-agent .lt, .qa-agent .log-sep,
+  .qa-agent .uz-label, .qa-agent .file-name, .qa-agent .upload-err,
+  .qa-agent .apikey-btn, .qa-agent .apikey-alert,
+  .qa-agent .notes-sug-text, .qa-agent .notes-sug-use,
+  .qa-agent input, .qa-agent textarea, .qa-agent select {
+    font-family:'DM Sans', sans-serif !important;
+  }
+  /* Override hardcoded dark-only colors so chips/badges stay readable in any theme */
+  .qa-agent .pchip.on{background:rgba(200,230,74,.12) !important;border-color:var(--accent) !important}
+  .qa-agent .pchip.on .pchip-lbl{color:var(--text) !important}
+  .qa-agent .pbadge.run{background:rgba(200,230,74,.12) !important;color:var(--accent) !important;border-color:var(--accent) !important}
+  .qa-agent .pbadge.done{background:rgba(74,230,200,.15) !important;color:var(--success) !important;border-color:rgba(74,230,200,.4) !important}
+  .qa-agent .pbadge.err{background:rgba(255,77,77,.12) !important;color:var(--danger) !important;border-color:var(--danger) !important}
+  .qa-agent .btn.clr{background:rgba(255,77,77,.08) !important;border-color:rgba(255,77,77,.3) !important}
+  .qa-agent .verdict.go{background:rgba(74,230,200,.1) !important}
+  .qa-agent .verdict.nogo{background:rgba(255,77,77,.1) !important}
+  .qa-agent .verdict.cond{background:rgba(255,181,71,.1) !important}
+  .qa-agent .tbadge.H{background:rgba(255,77,77,.12) !important;color:var(--danger) !important;border-color:rgba(255,77,77,.3) !important}
+  .qa-agent .tbadge.M{background:rgba(255,181,71,.12) !important;color:var(--warn) !important;border-color:rgba(255,181,71,.3) !important}
+  .qa-agent .tbadge.L{background:rgba(74,230,200,.12) !important;color:var(--success) !important;border-color:rgba(74,230,200,.3) !important}
+  .qa-agent .cat-tag.FN  {background:rgba(74,230,200,.12) !important;color:var(--success) !important;border-color:rgba(74,230,200,.3) !important}
+  .qa-agent .cat-tag.UIUX{background:rgba(167,139,250,.12) !important;color:#a78bfa !important;border-color:rgba(167,139,250,.3) !important}
+  .qa-agent .cat-tag.SEC {background:rgba(255,77,77,.12) !important;color:var(--danger) !important;border-color:rgba(255,77,77,.3) !important}
+  .qa-agent .cat-tag.API {background:rgba(255,181,71,.12) !important;color:var(--warn) !important;border-color:rgba(255,181,71,.3) !important}
+  .qa-agent .cat-tag.PERF{background:rgba(255,77,77,.12) !important;color:var(--danger) !important;border-color:rgba(255,77,77,.3) !important}
+  .qa-agent .cat-tag.SEO {background:rgba(56,189,248,.12) !important;color:#38bdf8 !important;border-color:rgba(56,189,248,.3) !important}
+  .qa-agent .cat-tag.CONT{background:rgba(144,150,168,.12) !important;color:var(--muted) !important;border-color:rgba(144,150,168,.3) !important}
+  .qa-agent .cat-tag.EDGE{background:rgba(255,181,71,.12) !important;color:var(--warn) !important;border-color:rgba(255,181,71,.3) !important}
+  .qa-agent .rc-btn:hover{background:rgba(200,230,74,.1) !important}
+  /* Ensure pchip label font matches project and is always readable */
+  .qa-agent .pchip-lbl{color:var(--text) !important;font-size:11px !important}
+
+  /* Smooth scrollbars to match parent */
+  .qa-agent ::-webkit-scrollbar { width: 6px; height: 6px; }
+  .qa-agent ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+  .qa-agent ::-webkit-scrollbar-track { background: transparent; }
+</style>
+<script>
+  // Pick up theme from query string (?theme=light|dark)
+  (function(){
+    var t = new URLSearchParams(location.search).get('theme');
+    if (t === 'light') document.documentElement.classList.add('light');
+  })();
+</script>
+</head>
+<body>
+<div id="qa-agent-root"></div>
+<script src="qa-agent.js"></script>
+</body>
+</html>

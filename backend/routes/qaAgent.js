@@ -11,10 +11,12 @@ router.delete('/config', auth, ctrl.deleteConfig);
 router.post('/crawl',    auth, ctrl.crawlSite);
 
 // Runs (history)
-router.get('/runs',        auth, ctrl.listRuns);
-router.post('/runs',       auth, ctrl.createRun);
-router.delete('/runs',     auth, ctrl.clearRuns);
-router.get('/runs/:id',    auth, ctrl.getRun);
-router.delete('/runs/:id', auth, ctrl.deleteRun);
+router.get('/runs',                auth, ctrl.listRuns);
+router.post('/runs',               auth, ctrl.createRun);
+router.delete('/runs',             auth, ctrl.clearRuns);
+router.get('/runs/project/:projectId', auth, ctrl.listRunsByProject);
+router.get('/runs/:id',            auth, ctrl.getRun);
+router.put('/runs/:id',            auth, ctrl.updateRun);
+router.delete('/runs/:id',         auth, ctrl.deleteRun);
 
 module.exports = router;
