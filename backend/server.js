@@ -71,7 +71,7 @@ const { startDBWatcher } = require('./utils/dbWatcher');
 
 const PORT = process.env.PORT || 5000;
 
-db.sequelize.sync({ alter: false }).then(async () => {
+db.sequelize.sync().then(async () => {
   console.log('✓ Database synchronized');
 
   // Migrate: add new test_cases columns if they don't exist
