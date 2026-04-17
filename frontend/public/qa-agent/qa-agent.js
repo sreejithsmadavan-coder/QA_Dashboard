@@ -80,12 +80,33 @@ const QA_AGENT_HTML = `
     <div class="proj-err hidden" id="projErr">Please select a project</div>
   </div>
 
-  <!-- URL -->
+  <!-- Project Type -->
   <div class="sbs">
+    <div class="slbl">Project Type</div>
+    <select id="projectType" onchange="projectTypeChange(this)">
+      <option value="website">Website / Webapp</option>
+      <option value="mobile">Mobile Application</option>
+    </select>
+  </div>
+
+  <!-- URL -->
+  <div class="sbs" id="urlSection">
     <div class="slbl">Website URL</div>
     <div class="url-row">
       <input type="text" id="url" placeholder="https://example.com" onfocus="if(configLocked&amp;&amp;guardConfigChange(null))this.blur()" style="flex:1"/>
       <button class="scan-btn" id="scanPagesBtn" onclick="scanPages()" title="Scan pages">&#128269; Scan</button>
+    </div>
+  </div>
+
+  <!-- Mobile: Coming Soon placeholder -->
+  <div class="sbs hidden" id="mobileSoonSection">
+    <div class="mobile-soon">
+      <svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="6" y="2" width="12" height="20" rx="2.5"/>
+        <line x1="11" y1="18" x2="13" y2="18"/>
+      </svg>
+      <h3>Mobile Application Testing</h3>
+      <p>Coming soon &mdash; we&rsquo;re building support for Android &amp; iOS apps. Please select <b>Website / Webapp</b> to continue.</p>
     </div>
   </div>
 
@@ -398,7 +419,7 @@ const QA_AGENT_HTML = `
       <p style="font-size:11px;color:var(--muted);margin-top:8px">Do you want to stop the current run and apply changes?</p>
     </div>
     <div class="modal-actions">
-      <button class="exp-btn" onclick="closeModal('restartModal')">Cancel</button>
+      <button class="exp-btn" onclick="cancelRestart()">Cancel</button>
       <button class="exp-btn primary-btn" onclick="confirmRestart()">Confirm</button>
     </div>
   </div>
@@ -874,94 +895,48 @@ function clearApiKey(){
 }
 
 // ── QA ARCHITECT SYSTEM PROMPT ───────────────────────────
-// This is the "20+ year architect" lens that wraps every model call. It
-// forces risk-based, invariant-driven, oracle-aware thinking instead of a
-// checklist dump. Keep this in sync with the gap-analysis document.
-const QA_ARCHITECT_SYSTEM=[
-'You are a QA Architect with 20+ years of experience across fintech, healthcare, e-commerce and distributed systems. You have personally debugged production outages caused by race conditions, mass assignment, cache/DB drift, timezone bugs and silent data loss. You think in terms of BUSINESS RISK, not checklist coverage.',
+// Loaded at runtime from Skills/ultrathink-qa-architect.md so editing the
+// skill file updates agent behaviour without a code change. The compact
+// inline fallback below is only used if the fetch fails (file deleted,
+// offline, opened from file://).
+let QA_ARCHITECT_SYSTEM=[
+'You are a QA Architect with 20+ years of experience. Think in BUSINESS RISK, not checklist coverage. Mission: maximum defect detection — near-zero production defects. Never assume. Always validate. Think like a production failure.',
 '',
-'── FOUNDATIONAL TESTING FUNDAMENTALS (always active) ──',
-'• Requirements analysis: read BETWEEN the lines. For every explicit requirement, identify 2-3 unstated assumptions and test them. Flag them with "ASSUMPTION:".',
-'• Risk assessment: order work by business risk, not by UI order. Money > data loss > UX > aesthetics.',
-'• Test strategy: every test must have a WHY. If you cannot state the WHY in one sentence, delete it.',
-'• Defect taxonomy: classify by ROOT CAUSE (input validation / state mgmt / concurrency / integration / config / data / 3rd-party / spec gap), not just severity.',
-'• Exploratory mindset: for every category, generate ≥5 charters that would find bugs AUTOMATION cannot find (rapid state changes, unusual navigation, mixed locales, undo/redo, back-button replay, slow typing, offline↔online flips).',
-'• Regression impact: when module A changes, ask which OTHER modules depend on A\u2019s contract. Test those too — this is where regressions hide.',
-'',
-'── TEST DESIGN TECHNIQUES (pick the right one per category) ──',
-'• Equivalence Partitioning (EP): carve every input domain into valid/invalid classes, test ONE representative per class — not twenty redundant ones.',
-'• Boundary Value Analysis (BVA): for every numeric/length/date field, test min-1, min, min+1, max-1, max, max+1. This is non-negotiable.',
-'• Decision Tables: for any feature with ≥2 conditions that combine (discounts + membership + region + coupon), write the full truth table and test every column.',
-'• State Transition Testing: for every stateful object (order, subscription, account, session) test every valid transition AND every invalid transition (should be rejected).',
-'• Pairwise / Combinatorial: when inputs have >3 dimensions (browser × OS × locale × role × plan), use pairwise to cover all pairs in a fraction of the cases.',
-'• Error Guessing: from years of pattern recognition — null, empty, whitespace, zero, negative, huge, unicode, reserved words, SQL keywords, script tags, path traversal. Always try these.',
-'• Use Case Testing: model end-to-end user journeys across multiple pages, not single-page checks.',
-'• Orthogonal Array Testing: when combinatorial explodes, use orthogonal arrays to cover the interaction effects with minimum runs.',
-'',
-'── SECURITY MINDSET (threat model, not checklist) ──',
-'• OWASP Top 10 — understand WHY each one ships to production, not just that it exists. Test the underlying mistake (missing server-side check, trusted client input, predictable token).',
-'• Threat modeling: for every feature, name 3 attackers (curious user, malicious competitor, insider) and their goals. Write tests for each goal.',
-'• Privilege escalation: horizontal (user A reads user B), vertical (user → admin), temporal (expired session still accepted), contextual (public endpoint reading private data).',
-'• Business logic abuse: coupon stacking, negative quantities, refund > charge, race-condition double-spend, ID tampering, workflow skipping.',
-'• Data leakage: search the response for PII/PCI/tokens even on success responses. Check logs, error messages, response headers, HTML source, sourcemaps, robots.txt, .git exposure.',
-'',
-'── PERFORMANCE THINKING ──',
-'• Load vs Stress vs Soak vs Spike — name which one each performance test is. Load = expected traffic, Stress = find the breaking point, Soak = 24h for leaks, Spike = sudden 10x traffic.',
-'• Bottleneck identification: every perf test must name the suspected bottleneck (DB CPU, DB IO, network, memory, 3rd-party, GC pause).',
-'• Caching: test cache hit, cache miss, stale-while-revalidate, cache invalidation on write, cache poisoning via header manipulation.',
-'• Concurrency: deadlocks, lock ordering, thundering herd on cache expiry, DB connection pool exhaustion.',
-'• Resource cleanup: verify connections/sockets/files are released on error paths — not just happy paths.',
-'',
-'── PROCESS & GOVERNANCE ──',
-'• Quality gates: every test set must declare which gate it belongs to (Coverage, Execution, Defects, Security, Performance, Accessibility, Sign-off).',
-'• Test exit criteria: when is testing "done"? Define: % coverage achieved, critical bugs closed, risk-accepted log signed.',
-'• Defect triage: every finding should be classifiable as BUG / FEATURE_REQUEST / ENVIRONMENT / SPEC_GAP / NOT_REPRODUCIBLE.',
-'• Root cause: apply 5-Whys. Every High/Critical case should produce a root-cause hypothesis, not just a symptom.',
-'• Meaningful coverage: requirement coverage > line coverage > branch coverage. Line coverage alone is a vanity metric.',
-'• Sign-off chain: QA Lead + Product Owner + Security Lead — each has veto power.',
-'',
-'── COMMUNICATION (shapes how you phrase every output) ──',
-'• Test cases must be plain-English CHECKLIST items a human tester can execute without training. Every scenario starts with "Verify that ..." and names a specific page.',
-'• Steps: 1-2 short natural sentences. Expected: one short sentence. No pseudocode, no "verified via:" academic tails, no JSON, no curl commands.',
-'• Bug reports: "Impact → Steps → Expected → Actual → Evidence". The impact MUST be business-framed (revenue/trust/compliance), not technical.',
-'• Executive summary: non-technical stakeholders must be able to make a go/no-go decision from the first paragraph.',
-'• Risk translation: a failing test is not "500 error on POST /api/x" — it is "users cannot complete checkout, blocking ~N orders/hour".',
-'• Go/No-Go: every run must end with an explicit recommendation + the top 3 reasons + the top 3 residual risks.',
-'',
-'Before generating any output, silently reason through these lenses and let them shape what you produce:',
-'',
-'1. RISK-BASED PRIORITIZATION — What breaks revenue? What breaks trust? What breaks compliance? Rank by business impact, not category size. Mark the top cases "must not ship without these" as P0 (priority H).',
-'',
-'2. BUSINESS LOGIC & INVARIANTS — Derive invariants from the crawled pages / API shape (e.g. "cart total = Σ line items", "refund ≤ original charge", "status transitions one-way"). Write negative tests that try to VIOLATE each invariant directly.',
-'',
-'3. CONCURRENCY & RACES — For every write endpoint: double-submit, out-of-order arrival, optimistic-lock conflict, idempotency replay, partial failure mid-transaction. For every auth flow: TOCTOU on permission checks, session revocation lag, race between password change and existing session.',
-'',
-'4. MULTI-ACTOR STATE EXPLOSION — Model flows with ≥2 actors (buyer/seller, user/admin, payer/payee, tenant-A/tenant-B). Test cross-tenant isolation on EVERY object ID. Test what happens when actor B acts on an object while actor A\u2019s transaction is in-flight.',
-'',
-'5. FAILURE MODES & RECOVERY — DB unavailable, 3rd-party 5xx, 3rd-party timeout, 3rd-party returns 200 but wrong body, network partition mid-write, retry storm, circuit breaker open→half-open. Assert: no data loss, no double-charge, user sees a coherent error, system self-heals.',
-'',
-'6. SECURITY BEYOND OWASP TOP 10 — BOLA/IDOR on every {id} in the URL (as another user, unauthenticated, expired token, wrong tenant). Mass assignment: POST extra fields (isAdmin, balance, ownerId). JWT: none-alg, alg confusion RS→HS, expired, tampered, reused after logout. SSRF via URL/image/webhook parameters. Rate-limit bypass via IP rotation, header injection, case variation. Race-condition auth bypass.',
-'',
-'7. DATA INTEGRITY ACROSS LAYERS — After every write: verify DB + cache + search index + event bus are consistent. After every failure: verify no orphan rows, no dangling references, no stale cache.',
-'',
-'8. OBSERVABILITY ASSERTIONS — Critical tests also assert: correct log line emitted, correct metric incremented, correct trace span present, correct alert NOT firing (or firing, for failure tests).',
-'',
-'9. ENVIRONMENTAL REALISM — Timezones (UTC vs user local vs server local), DST transitions, leap year, leap second. Locales: RTL, non-Latin scripts, comma-as-decimal, >4-byte UTF-8, emoji in every text field. Low bandwidth (3G throttle), offline→online transition, clock skew ±5 min.',
-'',
-'10. EXPLORATORY CHARTERS — Include at least 5 hypothesis-driven charters per run, format: "With {tool}, explore {area} to discover {information} — we are worried about {risk}".',
-'',
-'11. PLAIN-ENGLISH STYLE — Every scenario MUST start with "Verify that ..." and read like a QA checklist item a human would write. Keep it short, specific, and practical. The Expected Result should be one short sentence describing what success looks like — no verbose "verified via:" tails, no pseudocode, no academic phrasing.',
-'',
-'12. COST-OF-FAILURE TAG — Use Priority H = P0 BLOCKS_RELEASE, M = P1 SHIP_WITH_KNOWN_ISSUE, L = P2 NICE_TO_HAVE. Be honest about the distinction — not everything is High.',
-'',
-'HARD RULES FOR OUTPUT:',
-'- Every test case MUST reference a REAL, SPECIFIC page/endpoint from the DISCOVERED PAGES list. Do NOT invent routes. Do NOT write "all pages", "site-wide", "every endpoint", "the whole site", "globally" — these are BANNED. Pick a SPECIFIC path. If the same test applies to 5 pages, write it 5 times naming each page.',
-'- Every test case MUST state its oracle inside the Expected Result (see rule 11).',
-'- No generic cases. If a case would apply to any website, delete it and write one specific to THIS application.',
-'- When a requirement is unstated, embed the word "ASSUMPTION:" in the scenario name and state what you assumed.',
-'- If something cannot be tested from outside the app (needs DB access, log tail, etc.), prefix the scenario with "[MANUAL]" and explain what instrumentation is needed.',
-'- Output ONLY what is requested — no preamble, no summary, no markdown fences, no extra commentary.'
+'HARD RULES FOR OUTPUT (non-negotiable):',
+'- Every test case MUST reference a REAL, SPECIFIC page/endpoint from the DISCOVERED PAGES list. Do NOT invent routes. Do NOT write "all pages", "site-wide", "every endpoint" — BANNED. Pick a SPECIFIC path.',
+'- Every scenario starts with "Verify that ..." and names a specific page.',
+'- Steps: 1-2 short natural sentences. Expected: one short sentence. No JSON, no curl, no pseudocode, no markdown fences.',
+'- When a requirement is unstated, embed "ASSUMPTION:" in the scenario name.',
+'- If not testable from outside the app, prefix with "[MANUAL]".',
+'- Output ONLY what is requested — no preamble, no summary, no extra commentary.'
 ].join('\n');
+
+// Load the full UltraThink skill and any feature-specific checklists from
+// the Skills/ folder. The main skill is the core prompt; additional
+// checklists (contact form, checkout, login, etc.) are appended and self-
+// gate via their own "Applicability" sections. Drop a new .md file into
+// Skills/ and add its path here to extend agent coverage.
+const SKILL_FILES=[
+  './Skills/ultrathink-qa-architect.md',      // core skill — always applied
+  './Skills/checklist-contact-form.md',       // applies when contact/enquiry form detected
+];
+(async function loadQAArchitectSkill(){
+  try{
+    const parts=[];
+    for(const f of SKILL_FILES){
+      try{
+        const resp=await fetch(f,{cache:'no-cache'});
+        if(!resp.ok)continue;
+        const text=await resp.text();
+        if(text && text.length>100)parts.push(text);
+      }catch(_){ /* skip this file */ }
+    }
+    if(parts.length){
+      QA_ARCHITECT_SYSTEM=parts.join('\n\n---\n\n');
+      try{console.log('[QA Agent] Loaded '+parts.length+' skill file(s), '+QA_ARCHITECT_SYSTEM.length+' chars');}catch(_){}
+    }
+  }catch(_){ /* keep compact fallback */ }
+})();
 
 // ── AI API (Multi-Provider) ──────────────────────────────
 async function callAI(prompt, onChunk){
@@ -1523,6 +1498,64 @@ function clearNotes(){
   document.getElementById('rephraseBtn').onclick=rephraseNotes;
 }
 function siteTypeChange(){if(configLocked){guardConfigChange(null);return;}document.getElementById('othersWrap').classList.toggle('hidden',document.getElementById('stype').value!=='others');}
+let _lastProjectType='website';
+let _pendingCancelAction=null;
+function _applyProjectTypeUI(val){
+  var urlSec=document.getElementById('urlSection');
+  var mobileSec=document.getElementById('mobileSoonSection');
+  if(val==='mobile'){
+    if(urlSec)urlSec.classList.add('hidden');
+    if(mobileSec)mobileSec.classList.remove('hidden');
+    hidePostScanSections();
+  }else{
+    if(urlSec)urlSec.classList.remove('hidden');
+    if(mobileSec)mobileSec.classList.add('hidden');
+  }
+}
+function _clearPagesState(){
+  try{
+    scannedPages=[];
+    if(typeof S!=='undefined' && S){S.crawledPages=[];S.crawledDomain='';}
+    var cnt=document.getElementById('cnt-pages');if(cnt)cnt.textContent='0';
+    var es=document.getElementById('es-pages');
+    if(es){
+      es.style.display='';
+      es.innerHTML='<svg width="44" height="44" viewBox="0 0 48 48" fill="none"><rect x="6" y="6" width="36" height="36" rx="6" stroke="#64748b" stroke-width="2"/><path d="M14 14h20M14 22h20M14 30h12" stroke="#64748b" stroke-width="2" stroke-linecap="round"/></svg><h3>No pages scanned yet</h3><p>Enter a URL and click <b>Scan Pages</b> to discover all pages and check their status.</p>';
+    }
+    var cp=document.getElementById('c-pages');if(cp)cp.classList.add('hidden');
+    var dom=document.getElementById('pagesDomain');if(dom){dom.textContent='Domain: —';dom.href='#';}
+    var scanBtn=document.getElementById('scanPagesBtn');if(scanBtn){scanBtn.disabled=false;scanBtn.innerHTML='&#128269; Scan';scanBtn.title='Scan pages';}
+    var urlInp=document.getElementById('url');if(urlInp)urlInp.value='';
+    if(typeof _scanningPages!=='undefined')_scanningPages=false;
+  }catch(e){}
+}
+function _hasQaWork(){
+  try{
+    if(typeof scannedPages!=='undefined' && scannedPages && scannedPages.length)return true;
+    if(allTCRows && allTCRows.length)return true;
+    if(S && S.automationFiles && Object.keys(S.automationFiles).length)return true;
+    if(S && S.executionResults)return true;
+  }catch(e){}
+  return false;
+}
+function projectTypeChange(sel){
+  if(configLocked){sel.value=_lastProjectType;guardConfigChange(null);return;}
+  var newVal=sel.value;
+  if(newVal===_lastProjectType)return;
+  if(newVal==='mobile' && _hasQaWork()){
+    pendingConfigAction=function(){_clearPagesState();_lastProjectType='mobile';_applyProjectTypeUI('mobile');};
+    _pendingCancelAction=function(){sel.value=_lastProjectType;};
+    document.getElementById('restartModal').classList.add('show');
+    return;
+  }
+  _lastProjectType=newVal;
+  _applyProjectTypeUI(newVal);
+}
+function cancelRestart(){
+  closeModal('restartModal');
+  pendingConfigAction=null;
+  if(_pendingCancelAction){_pendingCancelAction();_pendingCancelAction=null;}
+}
 
 // ── PIPELINE LIST ────────────────────────────────────────
 function renderPipeList(){
@@ -1892,6 +1925,7 @@ function confirmRestart(){
   document.getElementById('cnt-errs').classList.add('hidden');errCount=0;
   log('Run stopped and reset. Configuration changed.','warn');
   saveS();
+  _pendingCancelAction=null;
   // Execute the pending config action
   if(pendingConfigAction){pendingConfigAction();pendingConfigAction=null;}
 }
@@ -2524,6 +2558,8 @@ async function startQA(resume=false){
           batches.push(pagesToCover.slice(bi,bi+BATCH_SIZE));
         }
         let accIndex=1;
+        let batchSuccesses=0;
+        let lastBatchErr=null;
         for(let bi=0;bi<batches.length;bi++){
           if(qaAborted)break;
           const batch=batches[bi];
@@ -2549,7 +2585,9 @@ async function startQA(resume=false){
               const tcScrollEl=document.getElementById('pane-tcs');
               if(tcScrollEl)autoScrollTick(tcScrollEl);
             });
+            batchSuccesses++;
           }catch(batchErr){
+            lastBatchErr=batchErr;
             log('  '+stepLabel+' '+batchLabel+' failed: '+batchErr.message+' — continuing','warn');
             continue;
           }
@@ -2559,6 +2597,11 @@ async function startQA(resume=false){
             .map(s=>parseInt(s.split('-')[1],10)).filter(n=>!isNaN(n));
           if(newIds.length){accIndex=Math.max(accIndex,Math.max.apply(null,newIds)+1);}
           else{accIndex+=10;}
+        }
+        // Fail the step loudly if every batch errored — otherwise the step
+        // would silently finish as "done ✓" with zero test cases.
+        if(!qaAborted && batchSuccesses===0 && batches.length>0){
+          throw new Error('All '+batches.length+' batch(es) failed'+(lastBatchErr?' — last error: '+lastBatchErr.message:'')+'. Check your API key / provider / rate limits.');
         }
       }else{
         text=await callAI(buildPrompt(step,base),full=>{
@@ -2604,6 +2647,9 @@ async function startQA(resume=false){
       text=renumberTestCases(text,step);
       bodyEl.textContent=text;
       const count=(text.match(new RegExp(step+'-\\d+','g'))||[]).length;
+      if(count===0){
+        throw new Error('AI returned no usable '+step+'-NN test cases for '+stepLabel+'. The model response did not match the expected format — try a different model or re-verify your API key.');
+      }
       markBlockDone(step,count);
       S.completed[step]={text,count};S.counts[step]=count;S.total=(S.total||0)+count;
       // Final reconcile: re-parse the complete text (post-critique) in case the last line was truncated mid-stream
@@ -3528,6 +3574,8 @@ function renderSecurity(){var S2=D.security;document.getElementById('sec-sev-car
   _w.showAutoModal = showAutoModal;
   _w.showRunModal = showRunModal;
   _w.siteTypeChange = siteTypeChange;
+  _w.projectTypeChange = projectTypeChange;
+  _w.cancelRestart = cancelRestart;
   _w.startQA = startQA;
   _w.stopQA = stopQA;
   _w.scanPages = scanPages;
