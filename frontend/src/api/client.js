@@ -90,10 +90,12 @@ export const saveQAAgentConfig = (data) => api.put('/qa-agent/config', data);
 export const clearQAAgentConfig = () => api.delete('/qa-agent/config');
 export const listQAAgentRuns = (params) => api.get('/qa-agent/runs', { params });
 export const getQAAgentRun = (id) => api.get(`/qa-agent/runs/${id}`);
+export const getQAAgentRunsByProject = (projectId) => api.get(`/qa-agent/runs/project/${projectId}`);
 export const createQAAgentRun = (data) => api.post('/qa-agent/runs', data);
+export const updateQAAgentRun = (id, data) => api.put(`/qa-agent/runs/${id}`, data);
 export const deleteQAAgentRun = (id) => api.delete(`/qa-agent/runs/${id}`);
 export const clearQAAgentRuns = () => api.delete('/qa-agent/runs');
-export const crawlQAAgentSite = (data) => api.post('/qa-agent/crawl', data, { timeout: 300000 });
+export const crawlQAAgentSite = (data) => api.post('/qa-agent/crawl', data, { timeout: 90000 });
 
 // Search
 export const globalSearch = (q) => api.get('/search', { params: { q } });

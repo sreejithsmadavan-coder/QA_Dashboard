@@ -1,7 +1,7 @@
 import { useEffect, useRef, useCallback } from 'react';
 import {
   getQAAgentConfig, saveQAAgentConfig,
-  listQAAgentRuns, createQAAgentRun, deleteQAAgentRun,
+  listQAAgentRuns, createQAAgentRun, updateQAAgentRun, deleteQAAgentRun,
   crawlQAAgentSite, getProjects,
 } from '../api/client';
 
@@ -9,20 +9,28 @@ import {
 function runToPayload(r) {
   const tcs = r.tcRows || [];
   const total = r.total || tcs.length || 0;
+  // Extract execution stats from executionResults if top-level fields are missing
+  const ex = r.executionResults || {};
+  const passCount = r.passCount || ex.pass || 0;
+  const failCount = r.failCount || ex.fail || 0;
+  const blockedCount = r.blockedCount || ex.blocked || 0;
+  const exTotal = total || ex.total || 0;
+  const passRate = r.passRate || (exTotal > 0 ? Math.round((passCount / exTotal) * 100) : 0);
   return {
     clientId: r.id,
+    projectId: r.projectId || null,
     url: r.url,
     provider: r.provider || null,
     model: r.model || null,
     categories: r.cats || [],
-    status: 'completed',
-    totalTests: total,
-    passCount: r.passCount || 0,
-    failCount: r.failCount || 0,
-    blockedCount: r.blockedCount || 0,
-    passRate: r.passRate || 0,
+    status: r.status === 'completed' ? 'completed' : (passCount + failCount > 0 ? 'completed' : 'completed'),
+    totalTests: exTotal,
+    passCount,
+    failCount,
+    blockedCount,
+    passRate,
     durationMs: r.durationMs || null,
-    results: { completed: r.completed, counts: r.counts },
+    results: { completed: r.completed, counts: r.counts, crawledPages: r.crawledPages || [] },
     bugs: r.bugs || [],
     testCases: tcs,
     reportHtml: r.reportHtml || null,
@@ -32,6 +40,8 @@ function runToPayload(r) {
 export default function QAAgentPage({ theme, toast, onNavigateCreateProject }) {
   const iframeRef = useRef(null);
   const hydratedRef = useRef(false);
+  // Track clientId → backendId mapping to upsert instead of duplicate-creating
+  const runIdMapRef = useRef({});
   const src = `/qa-agent/index.html?theme=${theme === 'light' ? 'light' : 'dark'}`;
 
   // Push backend state into the iframe (only sends fields that actually have data)
@@ -49,19 +59,24 @@ export default function QAAgentPage({ theme, toast, onNavigateCreateProject }) {
 
       const payload = {};
       if (Array.isArray(runs) && runs.length > 0) {
-        payload.runs = runs.map(r => ({
-          id: r.clientId || `RUN-${new Date(r.createdAt).getTime()}`,
-          backendId: r.id,
-          url: r.url,
-          stype: r.siteType || '',
-          cats: r.categories || [],
-          total: r.totalTests || 0,
-          bugs: 0,
-          date: new Date(r.createdAt).toLocaleString(),
-          tcRows: r.testCases || [],
-          completed: {},
-          counts: {},
-        }));
+        payload.runs = runs.map(r => {
+          const clientId = r.clientId || `RUN-${new Date(r.createdAt).getTime()}`;
+          // Track clientId → backendId mapping for upserts
+          runIdMapRef.current[clientId] = r.id;
+          return {
+            id: clientId,
+            backendId: r.id,
+            url: r.url,
+            stype: r.siteType || '',
+            cats: r.categories || [],
+            total: r.totalTests || 0,
+            bugs: 0,
+            date: new Date(r.createdAt).toLocaleString(),
+            tcRows: r.testCases || [],
+            completed: {},
+            counts: {},
+          };
+        });
       }
       if (cfg?.state && typeof cfg.state === 'object' && Object.keys(cfg.state).length > 0) {
         payload.state = cfg.state;
@@ -94,8 +109,23 @@ export default function QAAgentPage({ theme, toast, onNavigateCreateProject }) {
         if (msg.type === 'ready') {
           hydrate();
         } else if (msg.type === 'run-saved') {
-          await createQAAgentRun(runToPayload(msg.data || {}));
-          toast?.('success', 'QA run saved');
+          const payload = runToPayload(msg.data || {});
+          const clientId = msg.data?.id;
+          const existingBackendId = clientId ? runIdMapRef.current[clientId] : null;
+          try {
+            if (existingBackendId) {
+              // Update existing run
+              await updateQAAgentRun(existingBackendId, payload);
+            } else {
+              // Create new run and track the mapping
+              const res = await createQAAgentRun(payload);
+              if (clientId && res.data?.id) {
+                runIdMapRef.current[clientId] = res.data.id;
+              }
+            }
+          } catch (e) {
+            console.warn('Failed to save QA run', e);
+          }
         } else if (msg.type === 'run-deleted') {
           // Best-effort: backend uses int IDs; if we don't have one, refresh next hydrate handles it.
           if (msg.data?.backendId) {

@@ -137,6 +137,7 @@ const QAAgentConfig = sequelize.define('QAAgentConfig', {
 // ── QAAgentRun (one row per executed run) ────────────────────────────────────
 const QAAgentRun = sequelize.define('QAAgentRun', {
   id:        { type: DataTypes.INTEGER, primaryKey: true, autoIncrement: true },
+  clientId:  { type: DataTypes.STRING },
   userId:    { type: DataTypes.INTEGER, allowNull: false, references: { model: 'users', key: 'id' } },
   projectId: { type: DataTypes.INTEGER, references: { model: 'projects', key: 'id' } },
   url:       { type: DataTypes.STRING },

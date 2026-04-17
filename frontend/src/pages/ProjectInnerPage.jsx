@@ -4,6 +4,7 @@ import {
   createBug, updateBug, deleteBug,
   createTestCase, deleteTestCase,
   createExecution, uploadFile, getCategorySummary, getExecutionSummary, getDetailedAnalysis,
+  getQAAgentRunsByProject,
 } from '../api/client';
 import { Donut, ProgBar } from '../components/ui/Charts';
 import KanbanBoard from '../components/ui/KanbanBoard';
@@ -150,7 +151,7 @@ function FileViewerModal({ file, onClose }) {
 }
 
 // ── TABS ───────────────────────────────────────────────────────────────────────
-const TABS = ['Overview', 'Details', 'Bugs', 'Test Cases', 'Execution', 'API Testing', 'Performance', '404 Pages', 'Broken Links'];
+const SUB_TABS = ['Overview', 'Details', 'Bugs', 'Test Cases', 'Execution', 'API Testing', 'Performance', '404 Pages', 'Broken Links'];
 
 const HEALTH_COLOR = { Excellent: '#22c55e', Good: '#38BDF8', Average: '#FFB547', Poor: '#FF4D4D' };
 const HEALTH_IC = { Excellent: '✓', Good: '◎', Average: '◎', Poor: '✕' };
@@ -1459,9 +1460,376 @@ function BrokenLinksTab() {
   );
 }
 
+// ── QA AGENT RESULT SECTION ───────────────────────────────────────────────────
+
+// Helper: extract stats from a set of runs
+function useQAAgentData(runs) {
+  return useMemo(() => {
+    let totalTests = 0, totalPass = 0, totalFail = 0, totalBlocked = 0;
+    const allTestCases = [];
+    const allBugs = [];
+    const allCrawledPages = [];
+    runs.forEach(r => {
+      const ex = r.results || {};
+      const execData = r.executionResults || ex.executionResults || {};
+      const rTests = r.totalTests || execData.total || (Array.isArray(r.testCases) ? r.testCases.length : 0);
+      const rPass = r.passCount || execData.pass || 0;
+      const rFail = r.failCount || execData.fail || 0;
+      const rBlocked = r.blockedCount || execData.blocked || 0;
+      totalTests += rTests;
+      totalPass += rPass;
+      totalFail += rFail;
+      totalBlocked += rBlocked;
+      if (Array.isArray(r.testCases)) {
+        r.testCases.forEach(tc => allTestCases.push({ ...tc, runId: r.id, runUrl: r.url, runDate: r.createdAt }));
+      }
+      if (Array.isArray(r.bugs)) {
+        r.bugs.forEach(b => allBugs.push({ ...b, runId: r.id, runUrl: r.url }));
+      }
+      // Crawled pages from results JSON
+      const crawled = (r.results && Array.isArray(r.results.crawledPages)) ? r.results.crawledPages : [];
+      crawled.forEach(p => allCrawledPages.push({ ...p, runId: r.id }));
+    });
+    return {
+      totalTests, totalPass, totalFail, totalBlocked,
+      passRate: totalTests > 0 ? Math.round((totalPass / totalTests) * 100) : 0,
+      allTestCases, allBugs, allCrawledPages,
+      totalRuns: runs.length,
+      categories: [...new Set(runs.flatMap(r => r.categories || []))],
+    };
+  }, [runs]);
+}
+
+// ── QA Agent Overview ─────────────────────────────────────────────────────────
+function QAAgentOverviewTab({ runs, data }) {
+  if (!runs.length) return <Cd><div style={{ textAlign: 'center', padding: '48px 20px' }}><div style={{ fontSize: 48, marginBottom: 12 }}>🤖</div><div style={{ fontSize: 16, fontWeight: 700, color: 'var(--tx)', marginBottom: 6 }}>No QA Agent Runs</div><div style={{ fontSize: 13, color: 'var(--t3)', lineHeight: 1.6 }}>Go to the <strong>QA Agent</strong> page, select this project, and run a test.</div></div></Cd>;
+  const CAT_COLORS = { FN: 'var(--lime)', UIUX: 'var(--cy)', SEC: 'var(--am)', API: '#60a5fa', PERF: 'var(--rd)', SEO: '#a78bfa', CONT: '#34d399' };
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
+        {[['Total Runs', data.totalRuns, 'var(--tx)'], ['Test Cases', data.totalTests, 'var(--cy)'], ['Pass Rate', `${data.passRate}%`, data.passRate >= 80 ? '#22c55e' : data.passRate >= 60 ? 'var(--am)' : 'var(--rd)'], ['Categories', data.categories.length, 'var(--pu)']].map(([l, v, c]) => (
+          <Cd key={l} style={{ padding: '18px 20px', textAlign: 'center' }}><div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 4 }}>{l}</div><div style={{ fontSize: 32, fontWeight: 800, color: c }}>{v}</div></Cd>
+        ))}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+        <Cd style={{ padding: '20px 22px' }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx)', marginBottom: 16 }}>Execution Summary</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+            {[['Passed', data.totalPass, '#22c55e'], ['Failed', data.totalFail, 'var(--rd)'], ['Blocked', data.totalBlocked, 'var(--am)']].map(([l, v, c]) => (
+              <div key={l} style={{ textAlign: 'center', padding: '14px 10px', background: `${c}10`, borderRadius: 10, border: `1px solid ${c}25` }}><div style={{ fontSize: 24, fontWeight: 800, color: c }}>{v}</div><div style={{ fontSize: 11, color: 'var(--t2)', marginTop: 2 }}>{l}</div></div>
+            ))}
+          </div>
+          {data.totalTests > 0 && <div style={{ marginTop: 14 }}><div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}><span style={{ fontSize: 12, color: 'var(--t2)' }}>Pass Rate</span><span style={{ fontSize: 12, fontWeight: 700, color: data.passRate >= 80 ? '#22c55e' : 'var(--am)' }}>{data.passRate}%</span></div><div style={{ height: 6, background: 'var(--bd)', borderRadius: 3, overflow: 'hidden' }}><div style={{ height: '100%', display: 'flex' }}><div style={{ width: `${data.totalTests > 0 ? (data.totalPass / data.totalTests) * 100 : 0}%`, background: '#22c55e' }} /><div style={{ width: `${data.totalTests > 0 ? (data.totalFail / data.totalTests) * 100 : 0}%`, background: '#ef4444' }} /></div></div></div>}
+        </Cd>
+        <Cd style={{ padding: '20px 22px' }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx)', marginBottom: 16 }}>Test Categories</div>
+          {(() => { const cc = {}; runs.forEach(r => (r.categories || []).forEach(c => { cc[c] = (cc[c] || 0) + 1; })); return Object.entries(cc).map(([cat, count]) => (<div key={cat} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--bd)' }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: CAT_COLORS[cat] || 'var(--t3)', flexShrink: 0 }} /><span style={{ fontSize: 13, color: 'var(--tx)', flex: 1 }}>{cat}</span><span style={{ fontSize: 12, fontWeight: 600, color: 'var(--t2)' }}>{count} run{count > 1 ? 's' : ''}</span></div>)); })()}
+        </Cd>
+      </div>
+      {runs.length > 0 && <Cd style={{ padding: '20px 22px' }}><div style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx)', marginBottom: 4 }}>Latest Run</div><div style={{ fontSize: 12, color: 'var(--t3)', marginBottom: 14 }}>{new Date(runs[0].createdAt).toLocaleString()}</div><div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>{[['URL', runs[0].url, 'var(--cy)'], ['Provider', runs[0].provider || 'N/A', 'var(--tx)'], ['Tests', runs[0].totalTests || 0, 'var(--tx)'], ['Pass Rate', `${runs[0].passRate || 0}%`, (runs[0].passRate || 0) >= 80 ? '#22c55e' : 'var(--am)']].map(([l, v, c]) => (<div key={l}><div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 4 }}>{l}</div><div style={{ fontSize: 13, fontWeight: 600, color: c, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v}</div></div>))}</div></Cd>}
+    </div>
+  );
+}
+
+// ── QA Agent Details ──────────────────────────────────────────────────────────
+function QAAgentDetailsTab({ runs, data }) {
+  if (!runs.length) return <Cd><div style={{ textAlign: 'center', padding: '40px', color: 'var(--t3)' }}>No run data available.</div></Cd>;
+  const latest = runs[0];
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <Cd>
+        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--tx)', marginBottom: 18 }}>QA Agent Run Details</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 0 }}>
+          {[['Website URL', latest.url], ['AI Provider', latest.provider || '—'], ['Model', latest.model || '—'], ['Status', latest.status || 'completed'], ['Total Test Cases', data.totalTests], ['Total Runs', data.totalRuns], ['Categories', (latest.categories || []).join(', ') || '—'], ['Last Run', new Date(latest.createdAt).toLocaleString()], ['Duration', latest.durationMs ? `${Math.round(latest.durationMs / 1000)}s` : '—'], ['Pass Rate', `${data.passRate}%`]].map(([l, v], i) => (
+            <div key={l} style={{ padding: '14px 0', borderBottom: '1px solid var(--bd)', paddingLeft: i % 2 ? 24 : 0 }}>
+              <div style={{ fontSize: 12, color: 'var(--t3)', marginBottom: 4 }}>{l}</div>
+              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--tx)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{v}</div>
+            </div>
+          ))}
+        </div>
+      </Cd>
+      <Cd>
+        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--tx)', marginBottom: 12 }}>Run History ({runs.length})</div>
+        {runs.map((r, i) => (
+          <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 0', borderBottom: i < runs.length - 1 ? '1px solid var(--bd)' : 'none' }}>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--cy)', minWidth: 60 }}>Run #{runs.length - i}</span>
+            <span style={{ fontSize: 12, color: 'var(--t2)', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.url}</span>
+            <span style={{ fontSize: 11, color: 'var(--t3)' }}>{new Date(r.createdAt).toLocaleDateString()}</span>
+            <span style={{ fontSize: 11, fontWeight: 600, padding: '2px 8px', borderRadius: 5, background: r.status === 'completed' ? 'rgba(34,197,94,.1)' : 'rgba(255,77,77,.1)', color: r.status === 'completed' ? '#22c55e' : 'var(--rd)' }}>{r.status}</span>
+            <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--tx)' }}>{r.totalTests || (Array.isArray(r.testCases) ? r.testCases.length : 0)} TCs</span>
+          </div>
+        ))}
+      </Cd>
+    </div>
+  );
+}
+
+// ── QA Agent Bugs ─────────────────────────────────────────────────────────────
+function QAAgentBugsTab({ data }) {
+  const [view, setView] = useState('list');
+  const bugs = data.allBugs.map((b, i) => ({
+    id: `qa-bug-${i}`, title: b.title || b.name || `Bug #${i + 1}`, severity: b.severity || 'Medium',
+    status: b.status || 'Open', description: b.description || b.details || '', _source: 'qa_agent',
+    reporter: 'QA Agent (AI)', assignee: null,
+  }));
+  if (!bugs.length) return <Cd><div style={{ textAlign: 'center', padding: '48px 20px' }}><div style={{ fontSize: 48, marginBottom: 12, opacity: 0.4 }}>🐛</div><div style={{ fontSize: 16, fontWeight: 700, color: 'var(--tx)', marginBottom: 6 }}>No AI-Detected Bugs</div><div style={{ fontSize: 13, color: 'var(--t3)' }}>QA Agent has not detected any bugs in the test runs.</div></div></Cd>;
+  return (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--tx)' }}>AI-Detected Bugs ({bugs.length})</div>
+        <div style={{ display: 'flex', background: 'var(--b2)', borderRadius: 8, padding: 2, border: '1px solid var(--bd)' }}>
+          {[['kanban', '▦ Kanban'], ['list', '☰ List']].map(([v, label]) => (<button key={v} onClick={() => setView(v)} style={{ padding: '6px 14px', borderRadius: 6, border: 'none', fontSize: 12, fontWeight: 600, background: view === v ? 'var(--bc)' : 'transparent', color: view === v ? 'var(--tx)' : 'var(--t3)', cursor: 'pointer', fontFamily: "'DM Sans',sans-serif", boxShadow: view === v ? '0 1px 4px rgba(0,0,0,.15)' : 'none' }}>{label}</button>))}
+        </div>
+      </div>
+      {view === 'kanban' ? <KanbanBoard bugs={bugs} onStatusChange={() => {}} onCardClick={() => {}} /> : (
+        <div className="cd" style={{ padding: 0, overflow: 'hidden' }}>
+          {bugs.map((b, i) => (
+            <div key={b.id} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 20px', borderBottom: i < bugs.length - 1 ? '1px solid var(--bd)' : 'none' }}>
+              <span style={{ width: 8, height: 8, borderRadius: '50%', flexShrink: 0, background: b.severity === 'Critical' ? 'var(--rd)' : b.severity === 'High' ? 'var(--am)' : 'var(--tl)' }} />
+              <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{b.title}</div><div style={{ fontSize: 11, color: 'var(--t3)', marginTop: 2 }}>{b.severity} · QA Agent</div></div>
+              <span style={{ padding: '3px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, background: 'rgba(255,77,77,.1)', color: 'var(--rd)' }}>{b.status}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── QA Agent Test Cases ───────────────────────────────────────────────────────
+function QAAgentTestCasesTab({ data }) {
+  const [filter, setFilter] = useState('');
+  const PRIORITY_COLORS = { H: { bg: 'rgba(255,77,77,.1)', color: 'var(--rd)', label: 'High' }, M: { bg: 'rgba(255,181,71,.1)', color: 'var(--am)', label: 'Medium' }, L: { bg: 'rgba(200,230,74,.08)', color: 'var(--lime)', label: 'Low' } };
+  const filtered = useMemo(() => {
+    if (!filter) return data.allTestCases;
+    const q = filter.toLowerCase();
+    return data.allTestCases.filter(tc => ((tc.name || '') + (tc.id || '') + (tc.cat || '') + (tc.steps || '') + (tc.expected || '')).toLowerCase().includes(q));
+  }, [data.allTestCases, filter]);
+
+  if (!data.allTestCases.length) return <Cd><div style={{ textAlign: 'center', padding: '48px 20px' }}><div style={{ fontSize: 48, marginBottom: 12 }}>📋</div><div style={{ fontSize: 16, fontWeight: 700, color: 'var(--tx)', marginBottom: 6 }}>No AI Test Cases</div><div style={{ fontSize: 13, color: 'var(--t3)' }}>Run QA Agent to generate test cases.</div></div></Cd>;
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--tx)' }}>AI-Generated Test Cases ({data.allTestCases.length})</div>
+        <div style={{ display: 'flex', alignItems: 'center', background: 'var(--b2)', borderRadius: 9, border: '1px solid var(--bd)', padding: '0 10px' }}>
+          <span style={{ color: 'var(--t3)', fontSize: 13, marginRight: 6 }}>🔍</span>
+          <input value={filter} onChange={e => setFilter(e.target.value)} placeholder="Search..." style={{ background: 'none', border: 'none', color: 'var(--tx)', fontSize: 12.5, padding: '7px 0', outline: 'none', width: 180, fontFamily: "'DM Sans',sans-serif" }} />
+          {filter && <span style={{ color: 'var(--t3)', cursor: 'pointer', fontSize: 12 }} onClick={() => setFilter('')}>✕</span>}
+        </div>
+      </div>
+      <Cd style={{ padding: 0, overflow: 'hidden' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '50px 70px 70px 2fr 2fr 2fr 70px', gap: 8, padding: '10px 20px', borderBottom: '1px solid var(--bd)', fontSize: 11, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase' }}><span>#</span><span>ID</span><span>Cat</span><span>Name</span><span>Steps</span><span>Expected</span><span>Priority</span></div>
+        <div style={{ maxHeight: 500, overflowY: 'auto' }}>
+          {filtered.map((tc, i) => { const pri = PRIORITY_COLORS[tc.priority] || PRIORITY_COLORS.M; return (
+            <div key={`${tc.runId}-${tc.id}-${i}`} style={{ display: 'grid', gridTemplateColumns: '50px 70px 70px 2fr 2fr 2fr 70px', gap: 8, padding: '10px 20px', alignItems: 'center', borderBottom: i < filtered.length - 1 ? '1px solid var(--bd)' : 'none' }} onMouseEnter={e => e.currentTarget.style.background = 'var(--b2)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+              <span style={{ fontSize: 11, color: 'var(--t3)' }}>{i + 1}</span>
+              <span style={{ fontSize: 11, color: 'var(--cy)', fontFamily: 'monospace', fontWeight: 600 }}>{tc.id || '—'}</span>
+              <span style={{ fontSize: 10, padding: '2px 5px', borderRadius: 4, background: 'rgba(200,230,74,.08)', color: 'var(--lime)', fontWeight: 600, textAlign: 'center' }}>{tc.cat || '—'}</span>
+              <div style={{ fontSize: 12, color: 'var(--tx)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tc.name}>{tc.name}</div>
+              <div style={{ fontSize: 11, color: 'var(--t2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tc.steps}>{tc.steps}</div>
+              <div style={{ fontSize: 11, color: 'var(--t2)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={tc.expected}>{tc.expected}</div>
+              <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: pri.bg, color: pri.color, textAlign: 'center' }}>{pri.label}</span>
+            </div>); })}
+        </div>
+      </Cd>
+    </div>
+  );
+}
+
+// ── QA Agent Execution ────────────────────────────────────────────────────────
+function QAAgentExecutionTab({ runs, data }) {
+  const [activeFilter, setActiveFilter] = useState('All');
+  // Build execution rows from test cases with status info from executionResults
+  const execRows = useMemo(() => {
+    const rows = [];
+    runs.forEach(r => {
+      const ex = r.results?.executionResults || r.executionResults || {};
+      const tcResults = Array.isArray(ex.testCases) ? ex.testCases : [];
+      if (tcResults.length) {
+        tcResults.forEach(tc => rows.push({ ...tc, runId: r.id, runUrl: r.url, status: tc.status === 'pass' ? 'Passed' : tc.status === 'fail' ? 'Failed' : tc.status === 'blocked' ? 'Blocked' : 'Skipped' }));
+      } else if (Array.isArray(r.testCases)) {
+        r.testCases.forEach(tc => rows.push({ ...tc, runId: r.id, runUrl: r.url, status: 'Not Run' }));
+      }
+    });
+    return rows;
+  }, [runs]);
+
+  const filtered = activeFilter === 'All' ? execRows : execRows.filter(r => r.status === activeFilter);
+  const stC = { Passed: '#22c55e', Failed: 'var(--rd)', Blocked: 'var(--am)', Skipped: 'var(--t3)', 'Not Run': 'var(--t3)' };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <div style={{ display: 'flex', gap: 6 }}>
+        {['All', 'Passed', 'Failed', 'Blocked', 'Not Run'].map(f => (
+          <button key={f} onClick={() => setActiveFilter(f)} style={{ padding: '6px 14px', borderRadius: 8, border: `1px solid ${activeFilter === f ? 'rgba(200,230,74,.4)' : 'var(--bd)'}`, background: activeFilter === f ? 'rgba(200,230,74,.1)' : 'var(--b2)', color: activeFilter === f ? 'var(--lime)' : 'var(--t2)', fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: "'DM Sans',sans-serif" }}>{f} ({f === 'All' ? execRows.length : execRows.filter(r => r.status === f).length})</button>
+        ))}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14 }}>
+        {[['Total', data.totalTests, 'var(--tx)'], ['Passed', data.totalPass, '#22c55e'], ['Failed', data.totalFail, 'var(--rd)'], ['Pass Rate', `${data.passRate}%`, data.passRate >= 80 ? '#22c55e' : 'var(--am)']].map(([l, v, c]) => (
+          <Cd key={l} style={{ padding: '16px', textAlign: 'center' }}><div style={{ fontSize: 11, color: 'var(--t3)', marginBottom: 4 }}>{l}</div><div style={{ fontSize: 28, fontWeight: 800, color: c }}>{v}</div></Cd>
+        ))}
+      </div>
+      {filtered.length > 0 ? (
+        <Cd style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '50px 2fr 1fr 80px', gap: 8, padding: '10px 20px', borderBottom: '1px solid var(--bd)', fontSize: 11, fontWeight: 700, color: 'var(--t3)', textTransform: 'uppercase' }}><span>#</span><span>Test Case</span><span>Category</span><span>Status</span></div>
+          <div style={{ maxHeight: 500, overflowY: 'auto' }}>
+            {filtered.slice(0, 200).map((r, i) => (
+              <div key={i} style={{ display: 'grid', gridTemplateColumns: '50px 2fr 1fr 80px', gap: 8, padding: '10px 20px', borderBottom: '1px solid var(--bd)' }} onMouseEnter={e => e.currentTarget.style.background = 'var(--b2)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                <span style={{ fontSize: 11, color: 'var(--t3)' }}>{i + 1}</span>
+                <div style={{ fontSize: 12.5, color: 'var(--tx)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.name || r.id || '—'}</div>
+                <span style={{ fontSize: 12, color: 'var(--t2)' }}>{r.cat || r.category || '—'}</span>
+                <span style={{ padding: '3px 8px', borderRadius: 6, fontSize: 11, fontWeight: 600, textAlign: 'center', background: `${stC[r.status] || 'var(--t3)'}18`, color: stC[r.status] || 'var(--t3)' }}>{r.status}</span>
+              </div>
+            ))}
+          </div>
+        </Cd>
+      ) : <Cd><div style={{ textAlign: 'center', padding: '40px', color: 'var(--t3)', fontSize: 13 }}>No execution data available.</div></Cd>}
+    </div>
+  );
+}
+
+// ── QA Agent Category Filter Tab (for API Testing / Performance) ──────────────
+function QAAgentCategoryTab({ data, category, categoryLabel, icon }) {
+  const filtered = useMemo(() => data.allTestCases.filter(tc => tc.cat === category), [data.allTestCases, category]);
+  if (!filtered.length) return <Cd><div style={{ textAlign: 'center', padding: '48px 20px' }}><div style={{ fontSize: 48, marginBottom: 12, opacity: 0.4 }}>{icon}</div><div style={{ fontSize: 16, fontWeight: 700, color: 'var(--tx)', marginBottom: 6 }}>No {categoryLabel} Test Cases</div><div style={{ fontSize: 13, color: 'var(--t3)' }}>QA Agent did not generate {categoryLabel} tests. Enable the {category} category when running.</div></div></Cd>;
+  const PRIORITY_COLORS = { H: { bg: 'rgba(255,77,77,.1)', color: 'var(--rd)', label: 'High' }, M: { bg: 'rgba(255,181,71,.1)', color: 'var(--am)', label: 'Medium' }, L: { bg: 'rgba(200,230,74,.08)', color: 'var(--lime)', label: 'Low' } };
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+      <Cd style={{ padding: '18px 20px', display: 'flex', alignItems: 'center', gap: 12 }}>
+        <span style={{ fontSize: 24 }}>{icon}</span>
+        <div><div style={{ fontSize: 15, fontWeight: 700, color: 'var(--tx)' }}>{categoryLabel} Test Cases</div><div style={{ fontSize: 12, color: 'var(--t3)' }}>{filtered.length} test cases generated by QA Agent</div></div>
+      </Cd>
+      <Cd style={{ padding: 0, overflow: 'hidden' }}>
+        <div style={{ maxHeight: 500, overflowY: 'auto' }}>
+          {filtered.map((tc, i) => { const pri = PRIORITY_COLORS[tc.priority] || PRIORITY_COLORS.M; return (
+            <div key={i} style={{ padding: '12px 20px', borderBottom: i < filtered.length - 1 ? '1px solid var(--bd)' : 'none' }} onMouseEnter={e => e.currentTarget.style.background = 'var(--b2)'} onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 11, color: 'var(--cy)', fontFamily: 'monospace', fontWeight: 600 }}>{tc.id}</span>
+                <span style={{ fontSize: 10, fontWeight: 600, padding: '2px 6px', borderRadius: 4, background: pri.bg, color: pri.color }}>{pri.label}</span>
+              </div>
+              <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--tx)', marginBottom: 4 }}>{tc.name}</div>
+              <div style={{ fontSize: 12, color: 'var(--t2)', marginBottom: 2 }}>{tc.steps}</div>
+              <div style={{ fontSize: 12, color: 'var(--tl)' }}>Expected: {tc.expected}</div>
+            </div>); })}
+        </div>
+      </Cd>
+    </div>
+  );
+}
+
+// ── QA Agent 404 Pages (from real crawl data) ─────────────────────────────────
+function QAAgent404Tab({ data }) {
+  const pages404 = useMemo(() => data.allCrawledPages.filter(p => p.httpStatus === 404), [data.allCrawledPages]);
+  if (!data.allCrawledPages.length) return <Cd><div style={{ textAlign: 'center', padding: '48px 20px' }}><div style={{ fontSize: 48, marginBottom: 12, opacity: 0.4 }}>🔍</div><div style={{ fontSize: 16, fontWeight: 700, color: 'var(--tx)', marginBottom: 6 }}>No Crawl Data</div><div style={{ fontSize: 13, color: 'var(--t3)' }}>Run QA Agent to crawl the website and detect 404 pages.</div></div></Cd>;
+  if (!pages404.length) return <Cd><div style={{ textAlign: 'center', padding: '48px 20px' }}><div style={{ fontSize: 48, marginBottom: 12 }}>✓</div><div style={{ fontSize: 16, fontWeight: 700, color: '#22c55e', marginBottom: 6 }}>No 404 Pages Found</div><div style={{ fontSize: 13, color: 'var(--t3)' }}>All {data.allCrawledPages.length} crawled pages returned valid status codes.</div></div></Cd>;
+  return (
+    <Cd style={{ padding: '18px 22px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}><span style={{ fontSize: 28, fontWeight: 900, color: 'var(--am)' }}>{pages404.length}</span><div><div style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx)' }}>404 Pages Detected</div><div style={{ fontSize: 12, color: 'var(--t3)' }}>From QA Agent crawl results</div></div></div>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead><tr style={{ background: 'var(--b2)' }}>{['#', 'URL', 'Path', 'Status'].map(h => <th key={h} style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600, color: 'var(--t2)', textAlign: 'left', borderBottom: '1px solid var(--bd)' }}>{h}</th>)}</tr></thead>
+        <tbody>{pages404.map((p, i) => (
+          <tr key={i} className="rh" style={{ borderBottom: '1px solid var(--bd)' }}>
+            <td style={{ padding: '11px 14px', fontSize: 12, color: 'var(--t3)' }}>{i + 1}</td>
+            <td style={{ padding: '11px 14px', fontSize: 13, color: 'var(--cy)', fontFamily: 'monospace', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}><a href={p.url} target="_blank" rel="noopener" style={{ color: 'var(--cy)', textDecoration: 'none' }}>{p.url}</a></td>
+            <td style={{ padding: '11px 14px', fontSize: 12.5, color: 'var(--t2)', fontFamily: 'monospace' }}>{p.path || '—'}</td>
+            <td style={{ padding: '11px 14px' }}><span style={{ background: 'rgba(255,77,77,.1)', color: 'var(--rd)', fontSize: 12, fontWeight: 700, padding: '3px 8px', borderRadius: 6 }}>404</span></td>
+          </tr>
+        ))}</tbody>
+      </table>
+    </Cd>
+  );
+}
+
+// ── QA Agent Broken Links (from real crawl data) ──────────────────────────────
+function QAAgentBrokenLinksTab({ data }) {
+  const broken = useMemo(() => data.allCrawledPages.filter(p => (p.httpStatus >= 400 && p.httpStatus !== 404) || p.httpStatus === 0 || p.httpStatus >= 500), [data.allCrawledPages]);
+  const redirects = useMemo(() => data.allCrawledPages.filter(p => p.httpStatus >= 300 && p.httpStatus < 400), [data.allCrawledPages]);
+  const all = [...broken, ...redirects];
+  if (!data.allCrawledPages.length) return <Cd><div style={{ textAlign: 'center', padding: '48px 20px' }}><div style={{ fontSize: 48, marginBottom: 12, opacity: 0.4 }}>🔗</div><div style={{ fontSize: 16, fontWeight: 700, color: 'var(--tx)', marginBottom: 6 }}>No Crawl Data</div><div style={{ fontSize: 13, color: 'var(--t3)' }}>Run QA Agent to crawl the website and detect broken links.</div></div></Cd>;
+  if (!all.length) return <Cd><div style={{ textAlign: 'center', padding: '48px 20px' }}><div style={{ fontSize: 48, marginBottom: 12 }}>✓</div><div style={{ fontSize: 16, fontWeight: 700, color: '#22c55e', marginBottom: 6 }}>No Broken Links</div><div style={{ fontSize: 13, color: 'var(--t3)' }}>All {data.allCrawledPages.length} crawled links are healthy.</div></div></Cd>;
+  const stC = { Broken: 'var(--rd)', Redirect: 'var(--am)', Unreachable: 'var(--t3)' };
+  return (
+    <Cd style={{ padding: '18px 22px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}><span style={{ fontSize: 28, fontWeight: 900, color: 'var(--rd)' }}>{all.length}</span><div><div style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx)' }}>Link Issues Found</div><div style={{ fontSize: 12, color: 'var(--t3)' }}>{broken.length} broken · {redirects.length} redirects</div></div></div>
+      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+        <thead><tr style={{ background: 'var(--b2)' }}>{['#', 'URL', 'Status', 'Code', 'Type'].map(h => <th key={h} style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600, color: 'var(--t2)', textAlign: 'left', borderBottom: '1px solid var(--bd)' }}>{h}</th>)}</tr></thead>
+        <tbody>{all.map((p, i) => {
+          const type = p.httpStatus === 0 ? 'Unreachable' : p.httpStatus >= 400 ? 'Broken' : 'Redirect';
+          return (
+            <tr key={i} className="rh" style={{ borderBottom: '1px solid var(--bd)' }}>
+              <td style={{ padding: '11px 14px', fontSize: 12, color: 'var(--t3)' }}>{i + 1}</td>
+              <td style={{ padding: '11px 14px', fontSize: 13, color: 'var(--cy)', fontFamily: 'monospace', maxWidth: 350, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.url}</td>
+              <td style={{ padding: '11px 14px', fontSize: 12.5, color: 'var(--t2)' }}>{p.httpStatusText || '—'}</td>
+              <td style={{ padding: '11px 14px', fontSize: 12.5, fontFamily: 'monospace', color: stC[type] }}>{p.httpStatus || 0}</td>
+              <td style={{ padding: '11px 14px' }}><span style={{ fontSize: 11, fontWeight: 700, padding: '3px 9px', borderRadius: 20, background: `${stC[type]}18`, color: stC[type] }}>{type}</span></td>
+            </tr>);
+        })}</tbody>
+      </table>
+    </Cd>
+  );
+}
+
+// ── QA Agent Result Section Wrapper ───────────────────────────────────────────
+function QAAgentResultSection({ project, toast, tab }) {
+  const [runs, setRuns] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedRunId, setSelectedRunId] = useState('all');
+
+  const load = useCallback(async () => {
+    try {
+      const res = await getQAAgentRunsByProject(project.id);
+      setRuns(Array.isArray(res.data) ? res.data : []);
+    } catch {}
+    setLoading(false);
+  }, [project.id]);
+
+  useEffect(() => { load(); }, [load]);
+  useSocket({ 'qa-agent:run-created': load });
+
+  const activeRuns = useMemo(() => {
+    if (selectedRunId === 'all') return runs;
+    const r = runs.find(r => r.id === selectedRunId);
+    return r ? [r] : runs;
+  }, [runs, selectedRunId]);
+
+  const data = useQAAgentData(activeRuns);
+
+  if (loading) return <Cd><div style={{ textAlign: 'center', padding: '48px 20px', color: 'var(--t3)', fontSize: 13 }}>Loading QA Agent data...</div></Cd>;
+
+  const content = {
+    Overview: <QAAgentOverviewTab runs={activeRuns} data={data} />,
+    Details: <QAAgentDetailsTab runs={activeRuns} data={data} />,
+    Bugs: <QAAgentBugsTab data={data} />,
+    'Test Cases': <QAAgentTestCasesTab data={data} />,
+    Execution: <QAAgentExecutionTab runs={activeRuns} data={data} />,
+    'API Testing': <QAAgentCategoryTab data={data} category="API" categoryLabel="API Testing" icon="🔌" />,
+    Performance: <QAAgentCategoryTab data={data} category="PERF" categoryLabel="Performance" icon="⚡" />,
+    '404 Pages': <QAAgent404Tab data={data} />,
+    'Broken Links': <QAAgentBrokenLinksTab data={data} />,
+  };
+
+  return (
+    <div>
+      {/* Run selector */}
+      {runs.length > 0 && (
+        <div style={{ marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--t2)' }}>Run:</span>
+          <select value={selectedRunId} onChange={e => setSelectedRunId(e.target.value === 'all' ? 'all' : Number(e.target.value))}
+            style={{ background: 'var(--b2)', border: '1px solid var(--bd)', borderRadius: 8, color: 'var(--tx)', fontSize: 12.5, padding: '6px 12px', outline: 'none', fontFamily: "'DM Sans',sans-serif", cursor: 'pointer', minWidth: 200 }}>
+            <option value="all">All Runs ({runs.length})</option>
+            {runs.map((r, i) => <option key={r.id} value={r.id}>Run #{runs.length - i} — {r.url ? new URL(r.url).hostname : 'N/A'} — {new Date(r.createdAt).toLocaleDateString()}</option>)}
+          </select>
+        </div>
+      )}
+      {content[tab] || null}
+    </div>
+  );
+}
+
 // ── ProjectInnerPage (main export) ─────────────────────────────────────────────
 export default function ProjectInnerPage({ project: initialProject, onBack, toast }) {
   const [project, setProject] = useState(initialProject);
+  const [section, setSection] = useState('automation'); // 'automation' | 'qa-agent'
   const [tab, setTab] = useState('Overview');
   const [bugs, setBugs] = useState([]);
   const [failedTestCases, setFailedTestCases] = useState([]);
@@ -1486,9 +1854,11 @@ export default function ProjectInnerPage({ project: initialProject, onBack, toas
   useEffect(() => { load(); }, [load]);
   useSocket({ 'project:updated': load, 'bug:created': load, 'bug:updated': load });
 
+  // Reset tab to Overview when switching sections
+  const switchSection = useCallback((s) => { setSection(s); setTab('Overview'); }, []);
+
   const bd = useMemo(() => {
     const realBugs = bugs || project.bugs || [];
-    // Include failed test cases as bugs
     const allBugs = [
       ...realBugs,
       ...failedTestCases.map(tc => ({
@@ -1508,8 +1878,8 @@ export default function ProjectInnerPage({ project: initialProject, onBack, toas
 
   const projectWithBD = { ...project, bugsBreakdown: bd };
 
-  // Lazy-load tabs — only render the active tab to avoid mounting all 9 at once
-  const tabContent = {
+  // Automation Result tab content (existing behavior)
+  const autoTabContent = {
     Overview: <OverviewTab project={projectWithBD} />,
     Details: <DetailsTab project={projectWithBD} bugs={bugs} />,
     Bugs: tab === 'Bugs' ? <BugsTab bugs={bugs} project={project} toast={toast} /> : null,
@@ -1553,10 +1923,28 @@ export default function ProjectInnerPage({ project: initialProject, onBack, toas
         </div>
       </div>
 
-      {/* Tab bar */}
+      {/* ── Section Toggle (Automation Result / QA Agent Result) ── */}
+      <div style={{ display: 'flex', marginBottom: 14, background: 'var(--b2)', borderRadius: 12, padding: 4, border: '1px solid var(--bd)', width: 'fit-content' }}>
+        {[['automation', 'Automation Result'], ['qa-agent', 'QA Agent Result']].map(([key, label]) => (
+          <button key={key} onClick={() => switchSection(key)}
+            style={{
+              padding: '10px 24px', borderRadius: 9, border: 'none', fontSize: 13.5, fontWeight: 700,
+              background: section === key ? (key === 'automation' ? 'var(--bc)' : 'rgba(200,230,74,.12)') : 'transparent',
+              color: section === key ? (key === 'automation' ? 'var(--tx)' : 'var(--lime)') : 'var(--t3)',
+              cursor: 'pointer', transition: 'all .2s', fontFamily: "'DM Sans',sans-serif",
+              boxShadow: section === key ? '0 2px 8px rgba(0,0,0,.15)' : 'none',
+            }}>
+            {key === 'qa-agent' && <span style={{ marginRight: 6 }}>🤖</span>}
+            {key === 'automation' && <span style={{ marginRight: 6 }}>📋</span>}
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* ── Sub-tab bar ── */}
       <div style={{ overflowX: 'auto', marginBottom: 16, paddingBottom: 2 }}>
         <div style={{ display: 'flex', background: 'var(--b2)', borderRadius: 10, padding: 3, width: 'max-content', minWidth: '100%', boxSizing: 'border-box' }}>
-          {TABS.map(t => (
+          {SUB_TABS.map(t => (
             <button key={t} onClick={() => setTab(t)}
               style={{ flex: 1, padding: '8px 16px', borderRadius: 8, border: 'none', background: tab === t ? 'var(--bc)' : 'transparent', color: tab === t ? 'var(--tx)' : 'var(--t2)', fontSize: 13, fontWeight: tab === t ? 600 : 500, cursor: 'pointer', transition: 'all .2s', whiteSpace: 'nowrap', boxShadow: tab === t ? '0 1px 6px rgba(0,0,0,.18)' : 'none', fontFamily: "'DM Sans',sans-serif" }}>
               {t}
@@ -1565,7 +1953,9 @@ export default function ProjectInnerPage({ project: initialProject, onBack, toas
         </div>
       </div>
 
-      {tabContent[tab]}
+      {/* ── Tab Content ── */}
+      {section === 'automation' && autoTabContent[tab]}
+      {section === 'qa-agent' && <QAAgentResultSection project={project} toast={toast} tab={tab} />}
     </div>
   );
 }

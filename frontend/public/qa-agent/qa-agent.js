@@ -725,7 +725,7 @@ function crawlSiteViaHost(url,opts){
     const timeout=setTimeout(()=>{
       delete _crawlPending[reqId];
       reject(new Error('Crawl timed out — site may be slow or blocking the crawler'));
-    },300000);
+    },90000); // 90s timeout
     _crawlPending[reqId]={resolve,reject,timeout};
     _post('crawl-request',{reqId,url,maxPages:(opts&&opts.maxPages)||1000,maxDepth:(opts&&opts.maxDepth)||3});
   });
@@ -911,6 +911,7 @@ let QA_ARCHITECT_SYSTEM=[
 '- Output ONLY what is requested — no preamble, no summary, no extra commentary.'
 ].join('\n');
 
+<<<<<<< HEAD
 // Load the full UltraThink skill and any feature-specific checklists from
 // the Skills/ folder. The main skill is the core prompt; additional
 // checklists (contact form, checkout, login, etc.) are appended and self-
@@ -937,8 +938,26 @@ const SKILL_FILES=[
     }
   }catch(_){ /* keep compact fallback */ }
 })();
+=======
+// ── THROTTLE HELPER (prevents main-thread blocking during streaming) ────────
+// Returns a wrapper that calls `fn` at most once every `ms` milliseconds.
+// The last call is always delivered (trailing edge) so final state is correct.
+function _throttle(fn, ms){
+  let last=0, timer=null;
+  return function(){
+    const args=arguments, now=Date.now();
+    if(timer){clearTimeout(timer);timer=null;}
+    if(now-last>=ms){last=now;fn.apply(null,args);}
+    else{timer=setTimeout(function(){last=Date.now();fn.apply(null,args);},ms-(now-last));}
+  };
+}
+>>>>>>> ed43338b85ed44ce32ff49bbcd7f0bc662c62e4b
 
 // ── AI API (Multi-Provider) ──────────────────────────────
+// AI call timeout: 120s for initial response, 45s stall timeout for streaming
+const AI_FETCH_TIMEOUT=120000;
+const AI_STREAM_STALL_TIMEOUT=45000;
+
 async function callAI(prompt, onChunk){
   const key=getApiKey();
   if(!key) throw new Error('No verified API key — verify your key first');
@@ -946,43 +965,73 @@ async function callAI(prompt, onChunk){
   const sysmsg=QA_ARCHITECT_SYSTEM;
 
   if(prov.format==='anthropic'){
-    // Anthropic Messages API (no streaming for simplicity)
-    const resp=await fetch(prov.url,{method:'POST',headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({model:prov.model,max_tokens:16000,system:sysmsg,messages:[{role:'user',content:prompt}]})});
-    if(!resp.ok){const t=await resp.text();throw new Error(prov.name+' API error '+resp.status+': '+t.slice(0,150));}
-    const data=await resp.json();
-    const text=(data.content||[]).map(b=>b.text||'').join('');
-    if(onChunk)onChunk(text,text);
-    return text;
+    const ctrl=new AbortController();
+    const timer=setTimeout(()=>ctrl.abort(),AI_FETCH_TIMEOUT);
+    try{
+      const resp=await fetch(prov.url,{method:'POST',signal:ctrl.signal,headers:{'Content-Type':'application/json','x-api-key':key,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+        body:JSON.stringify({model:prov.model,max_tokens:16000,system:sysmsg,messages:[{role:'user',content:prompt}]})});
+      clearTimeout(timer);
+      if(!resp.ok){const t=await resp.text();throw new Error(prov.name+' API error '+resp.status+': '+t.slice(0,150));}
+      const data=await resp.json();
+      const text=(data.content||[]).map(b=>b.text||'').join('');
+      if(onChunk)onChunk(text,text);
+      return text;
+    }catch(e){clearTimeout(timer);if(e.name==='AbortError')throw new Error(prov.name+' request timed out ('+Math.round(AI_FETCH_TIMEOUT/1000)+'s). Try again or use a faster provider.');throw e;}
   }
 
   if(prov.format==='google'){
-    // Google Gemini API (no streaming)
-    const resp=await fetch(prov.url+'models/'+prov.model+':generateContent?key='+key,{method:'POST',headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({contents:[{parts:[{text:sysmsg+'\n\n'+prompt}]}],generationConfig:{maxOutputTokens:8192}})});
-    if(!resp.ok){const t=await resp.text();throw new Error(prov.name+' API error '+resp.status+': '+t.slice(0,150));}
-    const data=await resp.json();
-    const text=(data.candidates||[])[0]?.content?.parts?.map(p=>p.text||'').join('')||'';
-    if(onChunk)onChunk(text,text);
-    return text;
+    const ctrl=new AbortController();
+    const timer=setTimeout(()=>ctrl.abort(),AI_FETCH_TIMEOUT);
+    try{
+      const resp=await fetch(prov.url+'models/'+prov.model+':generateContent?key='+key,{method:'POST',signal:ctrl.signal,headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({contents:[{parts:[{text:sysmsg+'\n\n'+prompt}]}],generationConfig:{maxOutputTokens:8192}})});
+      clearTimeout(timer);
+      if(!resp.ok){const t=await resp.text();throw new Error(prov.name+' API error '+resp.status+': '+t.slice(0,150));}
+      const data=await resp.json();
+      const text=(data.candidates||[])[0]?.content?.parts?.map(p=>p.text||'').join('')||'';
+      if(onChunk)onChunk(text,text);
+      return text;
+    }catch(e){clearTimeout(timer);if(e.name==='AbortError')throw new Error(prov.name+' request timed out ('+Math.round(AI_FETCH_TIMEOUT/1000)+'s). Try again or use a faster provider.');throw e;}
   }
 
   // OpenAI-compatible (Groq, OpenAI, Mistral, Together, OpenRouter)
   const body={model:prov.model,max_tokens:16000,stream:!!onChunk,
     messages:[{role:'system',content:sysmsg},{role:'user',content:prompt}]};
   const headers={'Content-Type':'application/json','Authorization':'Bearer '+key};
-  const resp=await fetch(prov.url,{method:'POST',headers,body:JSON.stringify(body)});
+  const ctrl=new AbortController();
+  const timer=setTimeout(()=>ctrl.abort(),AI_FETCH_TIMEOUT);
+  let resp;
+  try{
+    resp=await fetch(prov.url,{method:'POST',signal:ctrl.signal,headers,body:JSON.stringify(body)});
+    clearTimeout(timer);
+  }catch(e){clearTimeout(timer);if(e.name==='AbortError')throw new Error(prov.name+' request timed out ('+Math.round(AI_FETCH_TIMEOUT/1000)+'s). Try again or use a faster provider.');throw e;}
   if(!resp.ok){const t=await resp.text();throw new Error(prov.name+' API error '+resp.status+': '+t.slice(0,150));}
   if(!onChunk){const data=await resp.json();return data.choices?.[0]?.message?.content||'';}
+  // Streaming with stall detection — abort if no data received for AI_STREAM_STALL_TIMEOUT
   const reader=resp.body.getReader();const dec=new TextDecoder();let full='';
-  while(true){
-    const{done,value}=await reader.read();if(done)break;
-    const lines=dec.decode(value).split('\n');
-    for(const line of lines){
-      if(!line.startsWith('data: '))continue;const d=line.slice(6);if(d==='[DONE]')continue;
-      try{const p=JSON.parse(d);const delta=p.choices?.[0]?.delta?.content;if(delta){full+=delta;onChunk(full,delta);}}catch(e){}
+  let stallTimer=setTimeout(()=>ctrl.abort(),AI_STREAM_STALL_TIMEOUT);
+  try{
+    while(true){
+      const{done,value}=await reader.read();if(done)break;
+      // Reset stall timer on every chunk received
+      clearTimeout(stallTimer);
+      stallTimer=setTimeout(()=>ctrl.abort(),AI_STREAM_STALL_TIMEOUT);
+      const lines=dec.decode(value).split('\n');
+      for(const line of lines){
+        if(!line.startsWith('data: '))continue;const d=line.slice(6);if(d==='[DONE]')continue;
+        try{const p=JSON.parse(d);const delta=p.choices?.[0]?.delta?.content;if(delta){full+=delta;onChunk(full,delta);}}catch(e){}
+      }
     }
+  }catch(e){
+    clearTimeout(stallTimer);
+    if(e.name==='AbortError'){
+      // If we have partial content, return it instead of failing completely
+      if(full.trim().length>100){log('Stream stalled after receiving partial data — using what we got','warn');return full;}
+      throw new Error(prov.name+' stream stalled (no data for '+Math.round(AI_STREAM_STALL_TIMEOUT/1000)+'s). Try again.');
+    }
+    throw e;
   }
+  clearTimeout(stallTimer);
   return full;
 }
 
@@ -2303,8 +2352,8 @@ function filterCasesByCrawl(rawText,catId){
     if(GENERALIZED_RE.test(line)){kept.push(line);continue;}
     const paths=extractPathsFromText(line);
     if(!paths.length){
-      // No specific path AND not a generalized case — drop it
-      dropped++;
+      // No specific path referenced — keep it (could be a valid test case about general functionality)
+      kept.push(line);
       continue;
     }
     // Keep if at least ONE referenced path matches the crawl
@@ -2419,10 +2468,10 @@ async function startQA(resume=false){
     if(existing){
       S.activeRunId=existing.id;
       log('Reusing existing run entry for this config: '+existing.id,'info');
-      upsertRun({id:S.activeRunId,url:S.url,stype:siteDesc,notes:S.notes,cats:S.cats,total:0,bugs:0,tcRows:[],completed:{},counts:{},automationFiles:{},automationTool:'',executionResults:null,date:new Date().toLocaleString()},'tc_pending');
+      upsertRun({id:S.activeRunId,projectId:S.projectId||null,url:S.url,stype:siteDesc,notes:S.notes,cats:S.cats,total:0,bugs:0,tcRows:[],completed:{},counts:{},automationFiles:{},automationTool:'',executionResults:null,date:new Date().toLocaleString()},'tc_pending');
     }else{
       S.activeRunId='RUN-'+Date.now();
-      upsertRun({id:S.activeRunId,url:S.url,stype:siteDesc,notes:S.notes,cats:S.cats,total:0,bugs:0,date:new Date().toLocaleString(),tcRows:[],completed:{},counts:{}},'tc_pending');
+      upsertRun({id:S.activeRunId,projectId:S.projectId||null,url:S.url,stype:siteDesc,notes:S.notes,cats:S.cats,total:0,bugs:0,date:new Date().toLocaleString(),tcRows:[],completed:{},counts:{}},'tc_pending');
     }
   }else{
     upsertRun({id:S.activeRunId},'tc_pending');
@@ -2568,10 +2617,9 @@ async function startQA(resume=false){
           const batchPrompt=buildPrompt(step,base,{pageBatch:batch,startIndex:accIndex});
           let batchText='';
           try{
-            batchText=await callAI(batchPrompt,full=>{
-              // Live-render: raw stream pane shows accumulated text across batches
+            // Throttle UI updates to max 2/sec to prevent main-thread blocking
+            const _batchUI=_throttle(function(full){
               bodyEl.textContent=text+full;
-              // Parse all complete lines so far across batches
               const combined=text+full;
               const lastNl=combined.lastIndexOf('\n');
               const safe=lastNl>=0?combined.slice(0,lastNl):'';
@@ -2582,10 +2630,15 @@ async function startQA(resume=false){
               renderTCTable(allTCRows);
               const tt=document.getElementById('ts-total');if(tt)tt.textContent='TOTAL: '+(baseTotal+c);
               autoScrollTick(resPane);
-              const tcScrollEl=document.getElementById('pane-tcs');
+              var tcScrollEl=document.getElementById('pane-tcs');
               if(tcScrollEl)autoScrollTick(tcScrollEl);
+<<<<<<< HEAD
             });
             batchSuccesses++;
+=======
+            },500);
+            batchText=await callAI(batchPrompt,function(full){_batchUI(full);});
+>>>>>>> ed43338b85ed44ce32ff49bbcd7f0bc662c62e4b
           }catch(batchErr){
             lastBatchErr=batchErr;
             log('  '+stepLabel+' '+batchLabel+' failed: '+batchErr.message+' — continuing','warn');
@@ -2604,7 +2657,8 @@ async function startQA(resume=false){
           throw new Error('All '+batches.length+' batch(es) failed'+(lastBatchErr?' — last error: '+lastBatchErr.message:'')+'. Check your API key / provider / rate limits.');
         }
       }else{
-        text=await callAI(buildPrompt(step,base),full=>{
+        // Throttle UI updates to max 2/sec to prevent main-thread blocking
+        const _singleUI=_throttle(function(full){
           bodyEl.textContent=full;
           const lastNl=full.lastIndexOf('\n');
           const safe=lastNl>=0?full.slice(0,lastNl):'';
@@ -2613,11 +2667,12 @@ async function startQA(resume=false){
           document.getElementById('rhc-'+step).textContent=c+' cases...';
           allTCRows=baseRows.concat(partialRows);
           renderTCTable(allTCRows);
-          const tt=document.getElementById('ts-total');if(tt)tt.textContent='TOTAL: '+(baseTotal+c);
+          var tt=document.getElementById('ts-total');if(tt)tt.textContent='TOTAL: '+(baseTotal+c);
           autoScrollTick(resPane);
-          const tcScrollEl=document.getElementById('pane-tcs');
+          var tcScrollEl=document.getElementById('pane-tcs');
           if(tcScrollEl)autoScrollTick(tcScrollEl);
-        });
+        },500);
+        text=await callAI(buildPrompt(step,base),function(full){_singleUI(full);});
       }
       clearInterval(stepTimer);
       bodyEl.classList.remove('streaming');
@@ -2677,8 +2732,10 @@ async function startQA(resume=false){
   document.getElementById('ov-config').innerHTML=[['URL',S.url],['Site Type',siteDesc],['Categories',S.cats.join(', ')],['Total Test Cases',S.total]].map(([k,v])=>'<div class="ov-row"><span class="ov-key">'+k+'</span><span class="ov-val">'+v+'</span></div>').join('');
   document.getElementById('es-ov').classList.add('hidden');document.getElementById('ov-c').classList.remove('hidden');
 
-  upsertRun({id:S.activeRunId,url:S.url,stype:siteDesc,notes:S.notes,cats:S.cats,total:S.total,bugs:0,
-    tcRows:allTCRows,completed:S.completed,counts:S.counts,automationFiles:S.automationFiles||{},automationTool:S.automationTool||'',
+  // Strip heavy pageAnalysis from crawled pages before persisting (keep only key fields)
+  var _crawlLight=(S.crawledPages||[]).map(function(p){return {url:p.url,path:p.path,title:p.title,httpStatus:p.httpStatus,httpStatusText:p.httpStatusText,external:p.external||false,source:p.source};});
+  upsertRun({id:S.activeRunId,projectId:S.projectId||null,url:S.url,stype:siteDesc,notes:S.notes,cats:S.cats,total:S.total,bugs:0,
+    tcRows:allTCRows,completed:S.completed,counts:S.counts,crawledPages:_crawlLight,automationFiles:S.automationFiles||{},automationTool:S.automationTool||'',
     executionResults:S.executionResults||null,emailSubject:S.emailSubject||'',emailAddr:S.emailAddr||'',autoSend:!!S.autoSend},'tc_created');
   document.getElementById('cnt-prev').textContent=getRuns().length;renderRuns();
 
@@ -2756,41 +2813,35 @@ async function generateAutomationScript(){
       return live;
     };
     let lastFileCount=0,lastActivePath=null;
-    const text=await callAI(prompt,full=>{
-      // Live-parse files and refresh the tree + active file content
-      const live=parseStreamFiles(full);
-      const names=Object.keys(live);
-      // Pick the file currently being written (the last one seen)
-      const activePath=names[names.length-1]||null;
-      // Rebuild file tree only when a new file appears
+    const _autoUI=_throttle(function(full){
+      var live=parseStreamFiles(full);
+      var names=Object.keys(live);
+      var activePath=names[names.length-1]||null;
       if(names.length!==lastFileCount){
         lastFileCount=names.length;
         S.automationFiles=live;
         renderFileTree();
-        // Auto-select the newest file so the user sees it being written
         if(activePath){
           currentAutoFile=activePath;
           if(editorHeader)editorHeader.innerHTML='<span>'+activePath+' <em style="color:var(--muted);font-style:normal;font-size:10px">(streaming…)</em></span>';
         }
       }else{
-        // Same file still being written — keep its content fresh
         S.automationFiles=live;
       }
-      // Show the active file's content in the editor (or fall back to full stream)
       if(activePath&&live[activePath]!=null){
         editor.value=live[activePath];
-        // Highlight active file in tree
         if(activePath!==lastActivePath){
           lastActivePath=activePath;
-          document.querySelectorAll('.ide-file').forEach(f=>f.classList.remove('active'));
-          document.querySelectorAll('.ide-file').forEach(f=>{if(f.dataset.path===activePath||f.textContent===activePath.split('/').pop())f.classList.add('active');});
+          document.querySelectorAll('.ide-file').forEach(function(f){f.classList.remove('active');});
+          document.querySelectorAll('.ide-file').forEach(function(f){if(f.dataset.path===activePath||f.textContent===activePath.split('/').pop())f.classList.add('active');});
         }
       }else{
         editor.value=full;
       }
       statusText.textContent='Streaming '+names.length+' file(s)…';
       autoScrollTick(editor);
-    });
+    },500);
+    const text=await callAI(prompt,function(full){_autoUI(full);});
     clearInterval(progTimer);
     statusText.textContent='Parsing generated files...';
     const files={};
@@ -3057,7 +3108,16 @@ async function runAutomation(){
     document.getElementById('runBtn').disabled=false;
     document.getElementById('autoRunBtn').disabled=false;document.getElementById('autoRunBtn').style.opacity='';
     log('Report generated and ready','ok');
-    upsertRun({id:S.activeRunId,executionResults:S.executionResults,bugs:(S.executionResults.bugs&&S.executionResults.bugs.length)||S.executionResults.bugCount||0},'completed');
+    // Extract pass/fail/blocked counts from execution results to top-level fields
+    var _exPass=S.executionResults.pass||0;
+    var _exFail=S.executionResults.fail||0;
+    var _exBlocked=S.executionResults.blocked||0;
+    var _exTotal=S.executionResults.total||(_exPass+_exFail+_exBlocked)||S.total||0;
+    var _exRate=_exTotal>0?Math.round((_exPass/_exTotal)*100):0;
+    upsertRun({id:S.activeRunId,executionResults:S.executionResults,
+      passCount:_exPass,failCount:_exFail,blockedCount:_exBlocked,passRate:_exRate,
+      total:_exTotal,
+      bugs:(S.executionResults.bugs&&S.executionResults.bugs.length)||S.executionResults.bugCount||0},'completed');
     postRunState(false);
     if(S.autoSend){autoSendReportSandbox();}
   }catch(err){

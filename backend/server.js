@@ -71,7 +71,7 @@ const { startDBWatcher } = require('./utils/dbWatcher');
 
 const PORT = process.env.PORT || 5000;
 
-db.sequelize.sync({ alter: false }).then(async () => {
+db.sequelize.sync().then(async () => {
   console.log('✓ Database synchronized');
 
   // Migrate: add new test_cases columns if they don't exist
@@ -204,6 +204,11 @@ db.sequelize.sync({ alter: false }).then(async () => {
       FOREIGN KEY (userId) REFERENCES users(id) ON DELETE CASCADE)`);
   } catch (e) {}
   console.log('✓ Integration webhooks table migrated');
+
+  // Migrate: add clientId column to qa_agent_runs
+  try {
+    await db.sequelize.query(`IF COL_LENGTH('qa_agent_runs', 'clientId') IS NULL ALTER TABLE qa_agent_runs ADD [clientId] NVARCHAR(255) NULL;`);
+  } catch (e) {}
 
   // Performance: add indexes on foreign keys
   const indexes = [
