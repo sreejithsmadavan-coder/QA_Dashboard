@@ -190,6 +190,11 @@ db.sequelize.sync().then(async () => {
   } catch (e) {}
   console.log('✓ Integration webhooks table migrated');
 
+  // Migrate: add clientId column to qa_agent_runs
+  try {
+    await db.sequelize.query(`IF COL_LENGTH('qa_agent_runs', 'clientId') IS NULL ALTER TABLE qa_agent_runs ADD [clientId] NVARCHAR(255) NULL;`);
+  } catch (e) {}
+
   // Performance: add indexes on foreign keys
   const indexes = [
     'IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name=\'idx_bugs_projectId\') CREATE INDEX idx_bugs_projectId ON bugs(projectId)',

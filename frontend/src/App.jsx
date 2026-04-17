@@ -2,12 +2,13 @@ import React, { useState, useCallback, useEffect, useRef, lazy, Suspense } from 
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { login as apiLogin } from './api/client';
 import { Toasts, useToast } from './components/ui/Toast';
-import { ConfirmModal } from './components/ui/Modal';
+import { Modal, ConfirmModal } from './components/ui/Modal';
 import Sidebar from './components/layout/Sidebar';
 import Topbar from './components/layout/Topbar';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import ProjectsPage from './pages/ProjectsPage';
+import { createProject } from './api/client';
 
 // Lazy-load heavy pages (code-split into separate chunks)
 const ProjectInnerPage = lazy(() => import('./pages/ProjectInnerPage'));
@@ -55,6 +56,7 @@ function AppContent() {
   const [qaProgress, setQaProgress] = useState(0);
   const [qaCompletedPending, setQaCompletedPending] = useState(false);
   const [autoCreateProject, setAutoCreateProject] = useState(false);
+  const [showCreateProjectModal, setShowCreateProjectModal] = useState(false);
   const [cmdPaletteOpen, setCmdPaletteOpen] = useState(false);
 
   // Global keyboard shortcuts (Ctrl+K search)
@@ -306,10 +308,7 @@ function AppContent() {
           </div>
           <div style={{ display: showQAAgent ? 'block' : 'none', height: '100%' }}>
             <QAAgentPage theme={theme} toast={toast} onNavigateCreateProject={() => {
-              setAutoCreateProject(true);
-              setActiveProjId(null);
-              setActiveProject(null);
-              setPage('projects');
+              setShowCreateProjectModal(true);
             }} />
           </div>
         </div>
@@ -354,7 +353,113 @@ function AppContent() {
           onCancel={() => setQaSwitchTarget(null)}
         />
       )}
+      {showCreateProjectModal && (
+        <CreateProjectInlineModal
+          onClose={() => setShowCreateProjectModal(false)}
+          onCreate={async (data) => {
+            try {
+              await createProject(data);
+              toast('success', `Project "${data.name}" created!`);
+              setShowCreateProjectModal(false);
+              // Notify QA Agent iframe to refresh projects list
+              const qaFrame = document.querySelector('iframe[title="QA Agent"]');
+              if (qaFrame?.contentWindow) {
+                qaFrame.contentWindow.postMessage({ source: 'qa-agent-host', type: 'projects-updated', data: [] }, '*');
+              }
+              // Trigger a fresh projects fetch in the iframe
+              try {
+                const { getProjects: fetchProjects } = await import('./api/client');
+                const resp = await fetchProjects();
+                const projList = Array.isArray(resp.data) ? resp.data : (resp.data?.rows || []);
+                if (qaFrame?.contentWindow) {
+                  qaFrame.contentWindow.postMessage({
+                    source: 'qa-agent-host', type: 'projects-updated',
+                    data: projList.map(p => ({ id: p.id, name: p.name })),
+                  }, '*');
+                }
+              } catch (_) {}
+            } catch { toast('error', 'Failed to create project'); }
+          }}
+        />
+      )}
     </div>
+  );
+}
+
+function CreateProjectInlineModal({ onClose, onCreate }) {
+  const [form, setForm] = useState({ name: '', status: 'Active', health: 'Good', description: '' });
+  const [loading, setLoading] = useState(false);
+  const set = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  const handle = async () => {
+    if (!form.name.trim()) return;
+    setLoading(true);
+    await onCreate(form);
+    setLoading(false);
+  };
+
+  const lbl = { display: 'block', fontSize: 12.5, fontWeight: 600, color: 'var(--t2)', marginBottom: 6 };
+  const inp = {
+    width: '100%', background: 'var(--b2)', border: '1px solid var(--bd)',
+    borderRadius: 10, color: 'var(--tx)', fontSize: 13.5, padding: '10px 14px',
+    outline: 'none', fontFamily: "'DM Sans',sans-serif", marginBottom: 16, boxSizing: 'border-box',
+  };
+
+  const STATUS_OPTIONS = ['Active', 'Pending', 'On Hold'];
+  const HEALTH_OPTIONS = ['Good', 'At Risk', 'Critical'];
+  const HEALTH_COLOR_MAP = { Good: '#38BDF8', 'At Risk': '#FFB547', Critical: '#FF4D4D' };
+  const STATUS_COLOR_MAP = { Active: '#C8E64A', Pending: '#FFB547', 'On Hold': '#FF4D4D' };
+
+  return (
+    <Modal title="Create New Project" onClose={onClose}>
+      <label style={lbl}>Project Name <span style={{ color: 'var(--rd)' }}>*</span></label>
+      <input value={form.name} onChange={set('name')} placeholder="e.g. Mobile App Testing" style={inp} autoFocus />
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 0 }}>
+        <div>
+          <label style={lbl}>Status</label>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+            {STATUS_OPTIONS.map(s => (
+              <button key={s} onClick={() => setForm(f => ({ ...f, status: s }))}
+                style={{
+                  padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  border: `1px solid ${form.status === s ? STATUS_COLOR_MAP[s] : 'var(--bd)'}`,
+                  background: form.status === s ? `${STATUS_COLOR_MAP[s]}18` : 'transparent',
+                  color: form.status === s ? STATUS_COLOR_MAP[s] : 'var(--t2)',
+                  transition: 'all .15s',
+                }}>{s}</button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <label style={lbl}>Health</label>
+          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+            {HEALTH_OPTIONS.map(h => (
+              <button key={h} onClick={() => setForm(f => ({ ...f, health: h }))}
+                style={{
+                  padding: '6px 14px', borderRadius: 20, fontSize: 12, fontWeight: 700, cursor: 'pointer',
+                  border: `1px solid ${form.health === h ? HEALTH_COLOR_MAP[h] : 'var(--bd)'}`,
+                  background: form.health === h ? `${HEALTH_COLOR_MAP[h]}18` : 'transparent',
+                  color: form.health === h ? HEALTH_COLOR_MAP[h] : 'var(--t2)',
+                  transition: 'all .15s',
+                }}>{h}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <label style={lbl}>Description</label>
+      <textarea value={form.description} onChange={set('description')} rows={4}
+        placeholder="Briefly describe the project scope, goals, or testing focus..."
+        style={{ ...inp, resize: 'vertical', lineHeight: 1.7, marginBottom: 20 }} />
+
+      <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', borderTop: '1px solid var(--bd)', paddingTop: 16, marginTop: 4 }}>
+        <button className="btn btn-s" onClick={onClose} style={{ minWidth: 90 }}>Cancel</button>
+        <button className="btn btn-p" onClick={handle} disabled={loading || !form.name.trim()} style={{ minWidth: 130 }}>
+          {loading ? 'Creating…' : 'Create Project'}
+        </button>
+      </div>
+    </Modal>
   );
 }
 
