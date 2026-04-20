@@ -911,7 +911,6 @@ let QA_ARCHITECT_SYSTEM=[
 '- Output ONLY what is requested — no preamble, no summary, no extra commentary.'
 ].join('\n');
 
-<<<<<<< HEAD
 // Load the full UltraThink skill and any feature-specific checklists from
 // the Skills/ folder. The main skill is the core prompt; additional
 // checklists (contact form, checkout, login, etc.) are appended and self-
@@ -938,7 +937,7 @@ const SKILL_FILES=[
     }
   }catch(_){ /* keep compact fallback */ }
 })();
-=======
+
 // ── THROTTLE HELPER (prevents main-thread blocking during streaming) ────────
 // Returns a wrapper that calls `fn` at most once every `ms` milliseconds.
 // The last call is always delivered (trailing edge) so final state is correct.
@@ -951,7 +950,6 @@ function _throttle(fn, ms){
     else{timer=setTimeout(function(){last=Date.now();fn.apply(null,args);},ms-(now-last));}
   };
 }
->>>>>>> ed43338b85ed44ce32ff49bbcd7f0bc662c62e4b
 
 // ── AI API (Multi-Provider) ──────────────────────────────
 // AI call timeout: 120s for initial response, 45s stall timeout for streaming
@@ -2632,13 +2630,9 @@ async function startQA(resume=false){
               autoScrollTick(resPane);
               var tcScrollEl=document.getElementById('pane-tcs');
               if(tcScrollEl)autoScrollTick(tcScrollEl);
-<<<<<<< HEAD
-            });
-            batchSuccesses++;
-=======
             },500);
             batchText=await callAI(batchPrompt,function(full){_batchUI(full);});
->>>>>>> ed43338b85ed44ce32ff49bbcd7f0bc662c62e4b
+            batchSuccesses++;
           }catch(batchErr){
             lastBatchErr=batchErr;
             log('  '+stepLabel+' '+batchLabel+' failed: '+batchErr.message+' — continuing','warn');
@@ -3664,6 +3658,30 @@ function renderSecurity(){var S2=D.security;document.getElementById('sec-sev-car
       }
       if(payload.state && typeof payload.state === 'object'){
         try{localStorage.setItem(STORE,JSON.stringify(payload.state));}catch(e){}
+        // Load persisted state into memory so the UI can reflect it.
+        // Skip mid-run fields (completed/executionResults/activeRunId) — those
+        // belong to a specific run, not the configuration form.
+        try{
+          var st=payload.state;
+          if(st.url!==undefined){S.url=st.url;var urlEl=document.getElementById('url');if(urlEl)urlEl.value=st.url||'';}
+          if(st.notes!==undefined){S.notes=st.notes;var notesEl=document.getElementById('notes');if(notesEl){notesEl.value=st.notes||'';try{onNotesInput();}catch(e){}}}
+          if(st.stype){S.stype=st.stype;var styEl=document.getElementById('stype');if(styEl){styEl.value=st.stype;try{siteTypeChange();}catch(e){}}}
+          if(Array.isArray(st.cats)){
+            S.cats=st.cats.slice();
+            Object.keys(CAT_DEFS).forEach(function(c){
+              var cb=document.querySelector('#chip-'+c+' input');
+              var chip=document.getElementById('chip-'+c);
+              var on=st.cats.indexOf(c)>-1;
+              if(cb)cb.checked=on;
+              if(chip)chip.classList.toggle('on',on);
+            });
+            try{renderPipeList();}catch(e){}
+          }
+          if(st.projectId)S.projectId=st.projectId;
+          if(Array.isArray(st.crawledPages))S.crawledPages=st.crawledPages;
+          if(st.crawledDomain)S.crawledDomain=st.crawledDomain;
+          if(st.apiProvider)S.apiProvider=st.apiProvider;
+        }catch(e){console.warn('[qa-agent] state apply failed',e);}
       }
       if(payload.provider && API_PROVIDERS[payload.provider]){
         var pSel=document.getElementById('apiProvider');
@@ -3682,7 +3700,7 @@ function renderSecurity(){var S2=D.security;document.getElementById('sec-sev-car
         var prov=getProvider();
         if(al){ al.className='apikey-alert ok'; al.textContent=prov.name+' key restored.'; }
       }
-      // Populate project dropdown from host
+      // Populate project dropdown from host (reads S.projectId to highlight selection)
       if(Array.isArray(payload.projects)){
         populateProjects(payload.projects);
       }

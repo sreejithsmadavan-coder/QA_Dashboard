@@ -74,17 +74,34 @@ const PORT = process.env.PORT || 5000;
 db.sequelize.sync().then(async () => {
   console.log('✓ Database synchronized');
 
-  // Migrate: add new test_cases columns if they don't exist
+  // Migrate: add new test_cases columns if they don't exist (dialect-aware)
+  const tcDialect = db.sequelize.getDialect();
   const newCols = [
-    ['testCaseRefId', 'NVARCHAR(255)'], ['module', 'NVARCHAR(255)'], ['subModule', 'NVARCHAR(255)'],
-    ['testType', 'NVARCHAR(255)'], ['preconditions', 'NVARCHAR(MAX)'], ['testSteps', 'NVARCHAR(MAX)'],
-    ['testData', 'NVARCHAR(MAX)'], ['actualResult', 'NVARCHAR(MAX)'], ['testResult', 'NVARCHAR(255)'],
-    ['severity', 'NVARCHAR(255)'], ['priority', 'NVARCHAR(255)'], ['remarks', 'NVARCHAR(MAX)'],
+    ['testCaseRefId', 'NVARCHAR(255)', 'TEXT'], ['module', 'NVARCHAR(255)', 'TEXT'], ['subModule', 'NVARCHAR(255)', 'TEXT'],
+    ['testType', 'NVARCHAR(255)', 'TEXT'], ['preconditions', 'NVARCHAR(MAX)', 'TEXT'], ['testSteps', 'NVARCHAR(MAX)', 'TEXT'],
+    ['testData', 'NVARCHAR(MAX)', 'TEXT'], ['actualResult', 'NVARCHAR(MAX)', 'TEXT'], ['testResult', 'NVARCHAR(255)', 'TEXT'],
+    ['severity', 'NVARCHAR(255)', 'TEXT'], ['priority', 'NVARCHAR(255)', 'TEXT'], ['remarks', 'NVARCHAR(MAX)', 'TEXT'],
   ];
-  for (const [col, type] of newCols) {
+  if (tcDialect === 'mssql') {
+    for (const [col, mssqlType] of newCols) {
+      try {
+        await db.sequelize.query(`IF COL_LENGTH('test_cases', '${col}') IS NULL ALTER TABLE test_cases ADD [${col}] ${mssqlType} NULL;`);
+      } catch (e) { /* column may already exist */ }
+    }
+  } else if (tcDialect === 'sqlite') {
     try {
-      await db.sequelize.query(`IF COL_LENGTH('test_cases', '${col}') IS NULL ALTER TABLE test_cases ADD [${col}] ${type} NULL;`);
-    } catch (e) { /* column may already exist */ }
+      const cols = await db.sequelize.query(`PRAGMA table_info(test_cases);`, { type: db.sequelize.QueryTypes.SELECT });
+      const names = cols.map(c => c.name);
+      for (const [col, , sqliteType] of newCols) {
+        if (!names.includes(col)) {
+          try { await db.sequelize.query(`ALTER TABLE test_cases ADD COLUMN ${col} ${sqliteType};`); } catch (e) {}
+        }
+      }
+    } catch (e) {}
+  } else if (tcDialect === 'postgres') {
+    for (const [col] of newCols) {
+      try { await db.sequelize.query(`ALTER TABLE test_cases ADD COLUMN IF NOT EXISTS "${col}" TEXT;`); } catch (e) {}
+    }
   }
   // Remove CHECK constraints from category/status columns (MSSQL ENUM workaround)
   try {

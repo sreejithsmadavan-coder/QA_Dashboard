@@ -114,7 +114,7 @@ export default function DashboardPage({ onNavigate, toast }) {
               : <span style={{ background: 'rgba(255,255,255,.05)', color: 'var(--t3)', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 10 }}>No Data</span>
             }
           </div>
-          {api.total === 0
+          {!api.total
             ? <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--t3)', fontSize: 13 }}>No API test data yet.<br/>Upload API test results to see stats.</div>
             : <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 20, alignItems: 'center' }}>
                 <Donut value={api.coverage} size={100} sw={10} color="var(--lime)" label="Coverage" suffix="%" />
@@ -138,7 +138,7 @@ export default function DashboardPage({ onNavigate, toast }) {
               : <span style={{ background: 'rgba(255,255,255,.05)', color: 'var(--t3)', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 10 }}>No Data</span>
             }
           </div>
-          {perf.testsRun === 0
+          {!perf.testsRun
             ? <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--t3)', fontSize: 13 }}>No performance test data yet.<br/>Upload performance results to see stats.</div>
             : <div style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: 20, alignItems: 'center' }}>
                 <Donut value={perf.successRate} size={100} sw={10} color="var(--cy)" label="Success Rate" suffix="%" />
@@ -164,7 +164,7 @@ export default function DashboardPage({ onNavigate, toast }) {
             <span style={{ fontSize: 14, fontWeight: 700, color: 'var(--tx)' }}>Security Testing</span>
             <span style={{ marginLeft: 'auto', fontSize: 11, fontWeight: 700, padding: '3px 10px', borderRadius: 10, background: 'rgba(167,139,250,.1)', color: 'var(--pu)' }}>{sec.total ?? 0} Tests</span>
           </div>
-          {sec.total === 0
+          {!sec.total
             ? <div style={{ textAlign: 'center', padding: '16px 0', color: 'var(--t3)', fontSize: 13 }}>No security test cases yet.</div>
             : [['Security Test Cases', sec.total, 'var(--pu)'], ['Vulnerability Scans', sec.vulnScans, 'var(--cy)'], ['Penetration Tests', sec.penTests, 'var(--lime)'], ['Failed / Flagged', sec.failed, 'var(--rd)']].map(([l, v, c]) =>
                 <div key={l} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '7px 0', borderBottom: '1px solid var(--bd)' }}>
