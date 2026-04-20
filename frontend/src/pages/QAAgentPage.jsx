@@ -100,6 +100,33 @@ export default function QAAgentPage({ theme, toast, onNavigateCreateProject }) {
     }
   }, []);
 
+  // Attach a parent-level beforeunload prompt that reads the flag set
+  // by 'dirty-state' messages from the iframe.
+  useEffect(() => {
+    const handler = (e) => {
+      if (window.__qaAgentBusy) {
+        const m = 'A QA process is currently running. If you reload, the run will be cancelled and all unsaved data will be deleted.';
+        console.log('[QA Agent] beforeunload fired — blocking reload (busy)');
+        e.preventDefault();
+        e.returnValue = m;
+        return m;
+      }
+      if (window.__qaAgentDirty) {
+        const m = 'You have unsaved configuration. If you reload, all entered data will be lost.';
+        console.log('[QA Agent] beforeunload fired — blocking reload (dirty)');
+        e.preventDefault();
+        e.returnValue = m;
+        return m;
+      }
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => {
+      window.removeEventListener('beforeunload', handler);
+      window.__qaAgentDirty = false;
+      window.__qaAgentBusy = false;
+    };
+  }, []);
+
   // Listen for events from the iframe → persist to backend
   useEffect(() => {
     const onMessage = async (ev) => {
@@ -153,6 +180,12 @@ export default function QAAgentPage({ theme, toast, onNavigateCreateProject }) {
           } catch (e) {
             console.warn('Failed to refresh projects', e);
           }
+        } else if (msg.type === 'dirty-state') {
+          const dirty = !!msg.data?.dirty;
+          const busy = !!msg.data?.busy;
+          window.__qaAgentDirty = dirty;
+          window.__qaAgentBusy = busy;
+          console.log('[QA Agent] dirty-state =', dirty, 'busy =', busy);
         } else if (msg.type === 'crawl-request') {
           const reqId = msg.data?.reqId;
           try {

@@ -63,7 +63,7 @@ const QA_AGENT_HTML = `
 
   <!-- Project -->
   <div class="sbs">
-    <div class="slbl">Project <span class="slbl-req">*</span></div>
+    <div class="slbl">Project</div>
     <div class="proj-field-row">
       <div class="proj-dd" id="projDd" style="flex:1">
         <div class="proj-dd-trigger" id="projDdTrigger" onclick="toggleProjDd()">
@@ -165,13 +165,14 @@ const QA_AGENT_HTML = `
   <div class="sbs">
     <div class="slbl">Test Categories</div>
     <div class="pipe-grid">
-      <label class="pchip on" id="chip-FN"><input type="checkbox" checked onchange="syncChip('FN',this)"><span class="pchip-lbl">Functional</span></label>
-      <label class="pchip on" id="chip-UIUX"><input type="checkbox" checked onchange="syncChip('UIUX',this)"><span class="pchip-lbl">UI/UX</span></label>
-      <label class="pchip on" id="chip-SEC"><input type="checkbox" checked onchange="syncChip('SEC',this)"><span class="pchip-lbl">Security</span></label>
-      <label class="pchip on" id="chip-API"><input type="checkbox" checked onchange="syncChip('API',this)"><span class="pchip-lbl">API Testing</span></label>
-      <label class="pchip on" id="chip-PERF"><input type="checkbox" checked onchange="syncChip('PERF',this)"><span class="pchip-lbl">Performance</span></label>
-      <label class="pchip on" id="chip-SEO"><input type="checkbox" checked onchange="syncChip('SEO',this)"><span class="pchip-lbl">SEO</span></label>
-      <label class="pchip on" id="chip-CONT"><input type="checkbox" checked onchange="syncChip('CONT',this)"><span class="pchip-lbl">Content</span></label>
+      <label class="pchip" id="chip-FN"><input type="checkbox" onchange="syncChip('FN',this)"><span class="pchip-lbl">Functional</span></label>
+      <label class="pchip" id="chip-UIUX"><input type="checkbox" onchange="syncChip('UIUX',this)"><span class="pchip-lbl">UI/UX</span></label>
+      <label class="pchip" id="chip-SEC"><input type="checkbox" onchange="syncChip('SEC',this)"><span class="pchip-lbl">Security</span></label>
+      <label class="pchip" id="chip-API"><input type="checkbox" onchange="syncChip('API',this)"><span class="pchip-lbl">API Testing</span></label>
+      <label class="pchip" id="chip-PERF"><input type="checkbox" onchange="syncChip('PERF',this)"><span class="pchip-lbl">Performance</span></label>
+      <label class="pchip" id="chip-SEO"><input type="checkbox" onchange="syncChip('SEO',this)"><span class="pchip-lbl">SEO</span></label>
+      <label class="pchip" id="chip-CONT"><input type="checkbox" onchange="syncChip('CONT',this)"><span class="pchip-lbl">Content</span></label>
+      <label class="pchip" id="chip-A11Y"><input type="checkbox" onchange="syncChip('A11Y',this)"><span class="pchip-lbl">Accessibility</span></label>
       <!-- Edge cases are now embedded into every category -->
     </div>
   </div>
@@ -260,6 +261,8 @@ const QA_AGENT_HTML = `
         <a class="pages-domain" id="pagesDomain" href="#" target="_blank" rel="noopener">Domain: —</a>
         <span class="pages-summary" id="pagesSummary"></span>
         <button class="exp-btn" onclick="exportPagesCSV()">&#11015; CSV</button>
+        <button class="exp-btn" onclick="runInlineAxeAndRender()" title="Run inline WCAG 2.2 scan using page analysis">&#128270; A11Y Scan</button>
+        <button class="exp-btn" onclick="generateRemediationReport()" title="Generate HTML remediation report with before/after code for each finding">&#128736; Remediation</button>
         <button class="exp-btn primary-btn" id="rescanBtn" onclick="scanPages()">&#8635; Rescan</button>
       </div>
       <div style="overflow-x:auto">
@@ -283,7 +286,7 @@ const QA_AGENT_HTML = `
           <option value="">All categories</option>
           <option value="FN">Functional</option><option value="UIUX">UI/UX Testing</option><option value="SEC">Security</option>
           <option value="API">API Testing</option><option value="PERF">Performance</option><option value="SEO">SEO</option>
-          <option value="CONT">Content</option>
+          <option value="CONT">Content</option><option value="A11Y">Accessibility</option>
         </select>
         <select class="tc-sel" id="tcPri" onchange="filterTCs()">
           <option value="">All priorities</option><option value="H">High</option><option value="M">Medium</option><option value="L">Low</option>
@@ -344,6 +347,7 @@ const QA_AGENT_HTML = `
         <button class="exp-btn" onclick="downloadReport()" style="margin-left:auto">&#11015; Download Report</button>
         <button class="exp-btn" onclick="sendReportEmail()">&#9993; Send Email</button>
       </div>
+      <div id="a11yReportPanel" class="hidden"></div>
       <iframe id="rptIframe" class="rpt-iframe"></iframe>
     </div>
   </div>
@@ -446,6 +450,7 @@ const CAT_DEFS={
   PERF:{label:'Performance',        desc:'Verify page load time is within acceptable limits (<3s). Verify performance under slow network conditions (3G simulation). Verify no layout shift during loading (CLS<0.1). Verify Largest Contentful Paint (LCP<2.5s) is optimized. Verify minimal blocking scripts. Verify images are optimized and lazy loaded. Verify no memory leaks or excessive CPU usage. Verify stability under rapid interactions (scroll, click). Verify TTFB<600ms. Verify cache headers (Cache-Control, ETag). Verify gzip/brotli compression. Verify font loading behavior. Verify total requests per page. Verify first visit vs return visit performance.'},
   SEO: {label:'SEO Testing',        desc:'Verify meta title and description are present, relevant, and correct length. Verify proper heading structure (H1, H2, H3 — no skipping). Verify each page has exactly one unique H1. Verify all image alt attributes are present and accurate. Verify canonical tags are implemented correctly. Verify URL structure is SEO-friendly. Verify sitemap.xml exists, is valid, and lists all pages. Verify robots.txt configuration. Verify no duplicate content issues. Verify pages are indexable. Verify OG tags and Twitter cards. Verify structured data/JSON-LD. Verify no broken internal links. Verify redirect chains <3 hops.'},
   CONT:{label:'Content Testing',    desc:'Verify all text content is accurate and consistent. Verify no spelling or grammar errors. Verify no placeholder, dummy, or Lorem Ipsum content exists. Verify consistency of data across pages. Verify correct formatting of paragraphs, lists, headings. Verify numbers, statistics, and labels are accurate. Verify copyright year is current. Verify CTA text matches destination page. Verify phone numbers are clickable on mobile. Verify email addresses have mailto links. Verify consistent brand terminology. Verify no HTML entities showing as raw text. Verify no TODO/FIXME visible in content.'},
+  A11Y:{label:'Accessibility Testing', desc:'Target is WCAG 2.2 Level AA full + key AAA + WAI-ARIA 1.2 + APG pattern conformance + COGA cognitive guidance. Verify every page passes all 30 Level A + 24 Level AA success criteria, including the 9 new in 2.2: 2.4.11 Focus Not Obscured (Min) — focused element never 100% hidden behind sticky header/footer/cookie banner (apply CSS scroll-padding, technique C43); 2.4.13 Focus Appearance — indicator ≥2 CSS px perimeter and 3:1 contrast vs adjacent; 2.5.7 Dragging Movements — every drag has a single-pointer alternative unless essential; 2.5.8 Target Size (Min) 24×24 CSS px or spacing exception (24px-diameter circle test); 3.2.6 Consistent Help — help/contact/chat links in same relative order across pages; 3.3.7 Redundant Entry — never re-ask info already provided in the same process; 3.3.8 Accessible Authentication (Min) — no cognitive-function-only login, autocomplete tokens correct, paste never blocked on password/OTP fields, passkey/WebAuthn option preferred. Verify POUR across every page. PERCEIVABLE: alt text is meaningful not placeholder (1.1.1), structure/relationships programmatic (1.3.1), input purpose via autocomplete tokens (1.3.5), color not the only indicator (1.4.1), contrast text 4.5:1 normal / 3:1 large (1.4.3), non-text contrast 3:1 for UI + graphics (1.4.11), text spacing adjustable without loss (1.4.12), reflow at 320 CSS px no horizontal scroll (1.4.10), hover/focus content dismissible + hoverable + persistent (1.4.13). OPERABLE: every function keyboard-accessible without timing (2.1.1), no keyboard trap (2.1.2), character shortcuts disableable or on-focus only (2.1.4), no 3-flash threshold violations (2.3.1), skip link / bypass blocks (2.4.1), descriptive page title (2.4.2), focus order matches reading order (2.4.3), link purpose determinable (2.4.4), headings + labels describe (2.4.6), focus visible (2.4.7), label in name — visible label text is in the accessible name (2.5.3), motion actuation optional (2.5.4). UNDERSTANDABLE: html lang set (3.1.1), lang of parts (3.1.2), no unexpected context change on focus (3.2.1), no unexpected context change on input (3.2.2), consistent navigation (3.2.3), consistent identification (3.2.4), errors identified in text (3.3.1), labels or instructions (3.3.2), error suggestion (3.3.3), error prevention for legal/financial/data submissions (3.3.4). ROBUST: correct name/role/value programmatically determinable (4.1.2), status messages programmatically determinable via role=status/alert/log without receiving focus (4.1.3). WAI-ARIA 1.2: verify accessible name precedence (aria-labelledby > aria-label > native label/alt > text content > title — NEVER rely on title alone); verify every composite role has its required owned children (menu owns menuitem, listbox owns option, tablist owns tab, radiogroup owns radio, tree owns treeitem); verify aria-hidden is never on an ancestor of focusable content unless tabindex=-1 / inert also applied; verify live regions use role=status (polite) or role=alert (assertive) or role=log; verify aria-busy=true during async updates; verify aria-expanded toggles on disclosure triggers; verify aria-current for current page/step in navigation; verify aria-invalid on fields failing validation. APG PATTERN CONFORMANCE: modal dialog uses role=dialog + aria-modal=true + aria-labelledby, traps Tab/Shift+Tab, Esc closes, focus restores to invoker, background inert via aria-modal or inert attribute; combobox textbox and listbox are SIBLINGS linked by aria-controls (never nested), DOM focus stays on textbox, virtual focus via aria-activedescendant, aria-expanded reflects popup state, aria-autocomplete set correctly (none/list/both), standard text-editing keys not intercepted; menu/menubar uses roving tabindex, arrow keys navigate (←→ menubar, ↑↓ menu), Enter/Space activates, Esc closes to trigger, first-letter typeahead, separators not focusable; tabs use roving tabindex + aria-selected + aria-controls, Tab enters and exits tablist (arrows navigate within), automatic vs manual activation declared, tabpanel has tabindex=0 if no focusable content; disclosure/accordion uses a button with aria-expanded + aria-controls. COGA COGNITIVE: consistent layout (home upper-left, search upper-right), controls labeled with text AND icon never icon-only, breadcrumbs, primary task visible without scroll, sentences ≤15 words in instructions, no double negatives, acronyms defined first use, credit cards chunked 4-digit groups, no auto-play audio/video, carousels pause before first advance, password manager auto-fill works (no blocked paste, correct autocomplete tokens), browser extensions not blocked, prefers-reduced-motion respected, prefers-color-scheme respected, zoom 200% and 400% still usable. MOBILE: target size 9mm physical or 24×24 CSS px, activate on touchend not touchstart, orientation both supported, multi-touch gestures have single-pointer alternative, correct inputmode + autocomplete on every input. MANDATORY MANUAL GATES (automation cannot assert these): screen reader pass with NVDA+Firefox and VoiceOver+Safari — every dynamic update announced, every dialog announces on open and restores focus on close, every landmark named; keyboard-only pass — every widget matches its APG keyboard contract; zoom 200% text-only and 400% reflow; text-spacing bookmarklet applied without content loss. AUTOMATED GATE: axe-core wcag22aa + wcag22aaa + best-practice rules — zero Critical, zero Serious. Every FAIL must cite the exact SC number (e.g. WCAG 2.2 SC 1.4.3, SC 2.4.11) in the test case description.'},
 };
 const SITE_DESC={
   corporate:'corporate website (about, services, team, contact, news)',
@@ -687,11 +692,92 @@ const TECHNIQUE_GUIDE={
     'State Transition: every resource lifecycle; illegal transitions must 409.',
     'Business Logic Abuse: replay with same idempotency key, mass-assignment for privilege escalation.',
   ],
+  A11Y:[
+    'Axis-based coverage: every test case names the exact WCAG 2.2 SC (e.g. SC 1.4.3, SC 2.4.11, SC 3.3.8) and the level (A/AA/AAA). No vague "accessibility check" tests.',
+    'Checklist / POUR walk: apply all 30 Level A + 24 Level AA criteria systematically per page, then add 2.2-new criteria (2.4.11, 2.4.13, 2.5.7, 2.5.8, 3.2.6, 3.3.7, 3.3.8) as explicit cases.',
+    'BVA on contrast: test at the boundary — 4.5:1 pass, 4.49:1 fail for normal text (SC 1.4.3); 3:1 pass/2.99:1 fail for large text and UI components (SC 1.4.11).',
+    'BVA on target size: 24×24 CSS px pass (SC 2.5.8 AA), 23×23 fail unless spacing exception (24px-diameter circle doesn\u2019t intersect adjacent target).',
+    'BVA on reflow: 320 CSS px viewport — no horizontal scroll except data tables / maps / toolbars (SC 1.4.10).',
+    'State Transition on focus: default → :hover → :focus-visible → :active → :disabled → :invalid → error state — verify visible indicator + 3:1 contrast at every state (SC 2.4.7, 2.4.13).',
+    'State Transition on widgets: every APG pattern has a state machine — modal closed→opening→open→closing→closed; combobox collapsed→expanded with virtual focus; tabs inactive→active. Walk every transition.',
+    'Decision Table for ARIA name computation: source × precedence — (aria-labelledby present? | aria-label present? | native label/alt present? | text content? | title only?) → expected accessible name. Title-only NEVER acceptable.',
+    'Decision Table for authentication (SC 3.3.8): method (password / OTP / CAPTCHA / passkey / magic link) × cognitive test required? × alternative offered? × paste allowed? × autocomplete tokens correct? → pass/fail. Every flow must have at least one non-cognitive path.',
+    'Pairwise: viewport × zoom × screen reader × orientation — 320/1280 × 100%/200%/400% × NVDA/VoiceOver × portrait/landscape.',
+    'Use Case — keyboard-only journey: complete the full critical flow (signup / login / checkout / key feature) with Tab/Shift+Tab/Enter/Space/Esc/arrows only. Any step that needs a mouse is a fail.',
+    'Use Case — screen reader journey: complete same flow with NVDA+Firefox. Every update must be announced; every dialog must announce on open and restore focus on close. Silent updates fail SC 4.1.3.',
+    'Error Guessing for aria-hidden pitfalls: focusable children inside aria-hidden ancestor (still receive Tab focus — bug); aria-hidden on ancestor of live dialog (dialog goes silent — bug); aria-hidden on element whose required-owned-child contract is then broken.',
+    'Error Guessing for required-owned-children: menu with no menuitem, listbox with no option, tablist with no tab, radiogroup with no radio — composite roles are broken without their required children.',
+    'Error Guessing for sticky overlays: Tab past a sticky header/footer/cookie-banner — does the focused element scroll fully into view? Fix is CSS scroll-padding (C43). This is SC 2.4.11 new in 2.2.',
+    'Error Guessing for label in name (SC 2.5.3): button shows "Sign in" but accessible name is "login-button" — voice-control users saying "click sign in" will fail.',
+    'APG conformance: for every custom widget on the page, walk the full APG keyboard contract and cite the pattern name. Modal, combobox, menu, tabs, disclosure, tooltip, tree, treegrid, grid, listbox, slider, spinbutton, switch — each has a published contract at w3.org/WAI/ARIA/apg/patterns.',
+    'Live region verification: trigger every async update (form submit, validation, toast, chat message, progress) and verify it announces with correct politeness — role=status for polite, role=alert for assertive, role=log for append-only.',
+    'COGA pairings: for every cognitive objective (memory / attention / language / error recovery), generate one case that would fail for a user with low literacy / ADHD / memory impairment / dyslexia.',
+    'Mobile-specific: test touch targets 9mm physical + 24 CSS px, activate on touchend not touchstart (so user can slide off to cancel), virtual keyboard correct for inputmode, screen reader gestures (VoiceOver rotor, TalkBack explore-by-touch) navigate all content.',
+    'Quality gate: automated (axe-core wcag22aa + wcag22aaa + best-practice tags) ZERO Critical + ZERO Serious; manual keyboard pass on every critical flow PASSES; manual screen reader pass (NVDA+Firefox AND VoiceOver+Safari) PASSES; every APG pattern conforms. One failure anywhere = overall fail.',
+  ],
 };
 function techniqueGuideFor(catId){
   const list=TECHNIQUE_GUIDE[catId];
   if(!list||!list.length)return '';
   return '\n\nDESIGN TECHNIQUES TO APPLY FOR THIS CATEGORY (pick the right one per test — do NOT use all of them on every case):\n  - '+list.join('\n  - ');
+}
+
+// ── WCAG 2.2 COVERAGE MASTER LIST (FIX-1) ────────────────
+// Every SC at Level A + AA that a "full" AA audit must cover. Used by
+// validateA11YCoverage() after test-case generation to flag gaps.
+const WCAG_22_REQUIRED={
+  A:['1.1.1','1.2.1','1.2.2','1.2.3','1.3.1','1.3.2','1.3.3','1.4.1','1.4.2',
+     '2.1.1','2.1.2','2.1.4','2.2.1','2.2.2','2.3.1','2.4.1','2.4.2','2.4.3','2.4.4',
+     '2.5.1','2.5.2','2.5.3','2.5.4',
+     '3.1.1','3.2.1','3.2.2','3.2.6','3.3.1','3.3.2','3.3.7',
+     '4.1.2'],
+  AA:['1.2.4','1.2.5','1.3.4','1.3.5','1.4.3','1.4.4','1.4.5','1.4.10','1.4.11','1.4.12','1.4.13',
+      '2.4.5','2.4.6','2.4.7','2.4.11','2.5.7','2.5.8',
+      '3.1.2','3.2.3','3.2.4','3.3.3','3.3.4','3.3.8',
+      '4.1.3'],
+};
+const WCAG_SC_NAMES={
+  '1.1.1':'Non-text Content','1.2.1':'Audio-only and Video-only (Prerecorded)','1.2.2':'Captions (Prerecorded)','1.2.3':'Audio Description or Media Alternative (Prerecorded)','1.2.4':'Captions (Live)','1.2.5':'Audio Description (Prerecorded)',
+  '1.3.1':'Info and Relationships','1.3.2':'Meaningful Sequence','1.3.3':'Sensory Characteristics','1.3.4':'Orientation','1.3.5':'Identify Input Purpose',
+  '1.4.1':'Use of Color','1.4.2':'Audio Control','1.4.3':'Contrast (Minimum)','1.4.4':'Resize Text','1.4.5':'Images of Text','1.4.10':'Reflow','1.4.11':'Non-text Contrast','1.4.12':'Text Spacing','1.4.13':'Content on Hover or Focus',
+  '2.1.1':'Keyboard','2.1.2':'No Keyboard Trap','2.1.4':'Character Key Shortcuts',
+  '2.2.1':'Timing Adjustable','2.2.2':'Pause, Stop, Hide','2.3.1':'Three Flashes or Below Threshold',
+  '2.4.1':'Bypass Blocks','2.4.2':'Page Titled','2.4.3':'Focus Order','2.4.4':'Link Purpose (In Context)','2.4.5':'Multiple Ways','2.4.6':'Headings and Labels','2.4.7':'Focus Visible','2.4.11':'Focus Not Obscured (Minimum)',
+  '2.5.1':'Pointer Gestures','2.5.2':'Pointer Cancellation','2.5.3':'Label in Name','2.5.4':'Motion Actuation','2.5.7':'Dragging Movements','2.5.8':'Target Size (Minimum)',
+  '3.1.1':'Language of Page','3.1.2':'Language of Parts',
+  '3.2.1':'On Focus','3.2.2':'On Input','3.2.3':'Consistent Navigation','3.2.4':'Consistent Identification','3.2.6':'Consistent Help',
+  '3.3.1':'Error Identification','3.3.2':'Labels or Instructions','3.3.3':'Error Suggestion','3.3.4':'Error Prevention (Legal, Financial, Data)','3.3.7':'Redundant Entry','3.3.8':'Accessible Authentication (Minimum)',
+  '4.1.2':'Name, Role, Value','4.1.3':'Status Messages',
+};
+// Extracts SC numbers from a test case title like "[WCAG SC 2.4.11 — Level AA] ..."
+const WCAG_SC_RE=/\bWCAG\s+SC\s+(\d\.\d\.\d{1,2})\b/i;
+function extractWCAGSC(text){
+  if(!text)return null;
+  const m=String(text).match(WCAG_SC_RE);
+  return m?m[1]:null;
+}
+function validateA11YCoverage(){
+  if(!Array.isArray(S.cats)||S.cats.indexOf('A11Y')<0)return null;
+  const a11yRows=(allTCRows||[]).filter(function(r){return (r.id||'').indexOf('A11Y-')===0;});
+  const covered={};
+  const unprefixed=[];
+  a11yRows.forEach(function(r){
+    const sc=extractWCAGSC(r.name||r.description||r.title||'');
+    if(sc)covered[sc]=(covered[sc]||0)+1;
+    else unprefixed.push(r.id);
+  });
+  const missingA=WCAG_22_REQUIRED.A.filter(function(sc){return !covered[sc];});
+  const missingAA=WCAG_22_REQUIRED.AA.filter(function(sc){return !covered[sc];});
+  const totalRequired=WCAG_22_REQUIRED.A.length+WCAG_22_REQUIRED.AA.length;
+  const totalCovered=Object.keys(covered).filter(function(sc){return WCAG_22_REQUIRED.A.indexOf(sc)>-1||WCAG_22_REQUIRED.AA.indexOf(sc)>-1;}).length;
+  return {
+    totalA11YTests:a11yRows.length,
+    totalRequired,totalCovered,
+    coveragePct:Math.round((totalCovered/totalRequired)*100),
+    missingA,missingAA,
+    unprefixed,           // rows whose title doesn't include a WCAG SC tag
+    covered,              // {sc: testCount}
+  };
 }
 const AUTO_TOOLS=[
   {id:'playwright-js',  label:'Playwright + JavaScript (POM)', ext:'js'},
@@ -712,7 +798,7 @@ const API_PROVIDERS={
   mistral:   {name:'Mistral',   url:'https://api.mistral.ai/v1/chat/completions',              model:'mistral-large-latest',                     placeholder:'...',        format:'openai',    keyPattern:/^.{20,}$/},
 };
 
-let S={completed:{},counts:{},total:0,bugs:0,url:'',notes:'',stype:'corporate',cats:Object.keys(CAT_DEFS),automationFiles:{},automationTool:'',executionResults:null,emailSubject:'',emailAddr:'',apiProvider:'groq'};
+let S={completed:{},counts:{},total:0,bugs:0,url:'',notes:'',stype:'corporate',cats:[],automationFiles:{},automationTool:'',executionResults:null,emailSubject:'',emailAddr:'',apiProvider:'groq'};
 let uploadedFiles=[], origNotes='', rephrasedText='', allTCRows=[], selectedAutoTool='playwright-js', editingIdx=-1;
 
 function _post(type,data){try{if(window.parent&&window.parent!==window)window.parent.postMessage({source:'qa-agent',type:type,data:data},'*');}catch(e){}}
@@ -1048,6 +1134,10 @@ function showError(stepLabel, errMsg){
 // ── PAGES TAB — Scan, render, filter, export ────────────
 let scannedPages=[];
 let _scanningPages=false;
+// Bumped by clearAll / _clearPagesState / confirmRestart. An in-flight
+// scan captures the current value at start and aborts its callbacks if
+// the counter has moved on, so stale results never overwrite fresh state.
+let _scanGen=0;
 
 function getPageStatusLabel(httpStatus){
   if(!httpStatus||httpStatus===0)return {label:'Unreachable',cls:'pg-unreachable'};
@@ -1168,6 +1258,7 @@ function scanPages(){
   if(!url){showToast('Please enter a website URL first.','warn');return;}
   if(!/^https?:\/\//i.test(url)){showToast('URL must start with http:// or https://','warn');return;}
   _scanningPages=true;
+  var myGen=_scanGen;
   var btn=document.getElementById('scanPagesBtn');
   var rescanBtn=document.getElementById('rescanBtn');
   if(btn){btn.disabled=true;btn.innerHTML='&#9203; Scanning...';}
@@ -1178,6 +1269,7 @@ function scanPages(){
   document.getElementById('c-pages').classList.add('hidden');
 
   crawlSiteViaHost(url,{maxPages:1000,maxDepth:3,deep:false}).then(function(crawl){
+    if(myGen!==_scanGen)return; // cancelled — ignore stale result
     scannedPages=(crawl&&crawl.pages)||[];
     S.crawledPages=scannedPages;
     // Detect and store the resolved domain/base URL
@@ -1200,9 +1292,11 @@ function scanPages(){
     showToast('Scan complete: '+scannedPages.length+' pages found','success');
     log('Page scan complete: '+scannedPages.length+' page(s) discovered — domain: '+S.crawledDomain,'ok');
   }).catch(function(err){
+    if(myGen!==_scanGen)return; // cancelled — ignore stale error
     document.getElementById('es-pages').innerHTML='<svg width="44" height="44" viewBox="0 0 48 48" fill="none"><rect x="6" y="6" width="36" height="36" rx="6" stroke="#64748b" stroke-width="2"/><path d="M14 14h20M14 22h20M14 30h12" stroke="#64748b" stroke-width="2" stroke-linecap="round"/></svg><h3>Scan failed</h3><p>'+err.message+'</p>';
     showToast('Page scan failed: '+err.message,'error');
   }).finally(function(){
+    if(myGen!==_scanGen)return; // cancelled — button state already reset by _clearPagesState
     _scanningPages=false;
     if(btn){btn.disabled=false;btn.innerHTML='&#8635; Rescan';btn.title='Rescan pages';}
     if(rescanBtn){rescanBtn.disabled=false;}
@@ -1556,6 +1650,7 @@ function _applyProjectTypeUI(val){
 }
 function _clearPagesState(){
   try{
+    _scanGen++; // invalidate any in-flight scan
     scannedPages=[];
     if(typeof S!=='undefined' && S){S.crawledPages=[];S.crawledDomain='';}
     var cnt=document.getElementById('cnt-pages');if(cnt)cnt.textContent='0';
@@ -1573,6 +1668,8 @@ function _clearPagesState(){
 }
 function _hasQaWork(){
   try{
+    if(typeof _scanningPages!=='undefined' && _scanningPages)return true;
+    if(typeof isRunning!=='undefined' && isRunning)return true;
     if(typeof scannedPages!=='undefined' && scannedPages && scannedPages.length)return true;
     if(allTCRows && allTCRows.length)return true;
     if(S && S.automationFiles && Object.keys(S.automationFiles).length)return true;
@@ -1585,7 +1682,12 @@ function projectTypeChange(sel){
   var newVal=sel.value;
   if(newVal===_lastProjectType)return;
   if(newVal==='mobile' && _hasQaWork()){
-    pendingConfigAction=function(){_clearPagesState();_lastProjectType='mobile';_applyProjectTypeUI('mobile');};
+    pendingConfigAction=function(){
+      // Full Clear & Reset first, then apply the user's project-type change.
+      clearAll();
+      _lastProjectType='mobile';
+      _applyProjectTypeUI('mobile');
+    };
     _pendingCancelAction=function(){sel.value=_lastProjectType;};
     document.getElementById('restartModal').classList.add('show');
     return;
@@ -1974,8 +2076,10 @@ function confirmRestart(){
 
 // ── CLEAR ────────────────────────────────────────────────
 function clearAll(){
+  _scanGen++; // invalidate any in-flight scan
+  _scanningPages=false;
   try{localStorage.removeItem(STORE);}catch(e){}
-  S={completed:{},counts:{},total:0,bugs:0,url:'',notes:'',stype:'corporate',cats:Object.keys(CAT_DEFS),automationFiles:{},automationTool:'',executionResults:null,emailSubject:'',emailAddr:'',apiProvider:S.apiProvider||'groq'};
+  S={completed:{},counts:{},total:0,bugs:0,url:'',notes:'',stype:'corporate',cats:[],automationFiles:{},automationTool:'',executionResults:null,emailSubject:'',emailAddr:'',apiProvider:S.apiProvider||'groq'};
   // Reset sidebar fields
   document.getElementById('url').value='';
   document.getElementById('notes').value='';
@@ -1985,8 +2089,8 @@ function clearAll(){
   origNotes='';rephrasedText='';
   // Reset uploaded files
   uploadedFiles=[];renderFiles();
-  // Reset all category checkboxes to checked
-  Object.keys(CAT_DEFS).forEach(c=>{const cb=document.querySelector('#chip-'+c+' input');if(cb){cb.checked=true;document.getElementById('chip-'+c).classList.add('on');}});
+  // Reset all category checkboxes to unchecked (user must opt in)
+  Object.keys(CAT_DEFS).forEach(c=>{const cb=document.querySelector('#chip-'+c+' input');if(cb){cb.checked=false;document.getElementById('chip-'+c).classList.remove('on');}});
   // Reset panes
   ['res','rpt'].forEach(p=>{
     const c=document.getElementById('c-'+p);if(c)c.innerHTML='';
@@ -2018,8 +2122,9 @@ function clearAll(){
   document.getElementById('es-pages').innerHTML='<svg width="44" height="44" viewBox="0 0 48 48" fill="none"><rect x="6" y="6" width="36" height="36" rx="6" stroke="#64748b" stroke-width="2"/><path d="M14 14h20M14 22h20M14 30h12" stroke="#64748b" stroke-width="2" stroke-linecap="round"/></svg><h3>No pages scanned yet</h3><p>Enter a URL and click <b>Scan Pages</b> to discover all pages and check their status.</p>';
   document.getElementById('c-pages').classList.add('hidden');
   var domEl=document.getElementById('pagesDomain');if(domEl){domEl.textContent='Domain: —';domEl.href='#';}
-  // Reset scan button back to "Scan"
-  var scanBtn=document.getElementById('scanPagesBtn');if(scanBtn){scanBtn.innerHTML='&#128269; Scan';scanBtn.title='Scan pages';}
+  // Reset scan button back to "Scan" and re-enable both scan/rescan buttons
+  var scanBtn=document.getElementById('scanPagesBtn');if(scanBtn){scanBtn.disabled=false;scanBtn.innerHTML='&#128269; Scan';scanBtn.title='Scan pages';}
+  var rescanBtnEl=document.getElementById('rescanBtn');if(rescanBtnEl){rescanBtnEl.disabled=false;}
   // Hide post-scan sections
   hidePostScanSections();
   // Reset automation tick badge
@@ -2105,9 +2210,60 @@ function formatPageForPrompt(p){
     parts.push('HEADINGS: '+hList.join(' | '));
   }
 
-  // Images
+  // Images — include alt text samples so LLM can flag placeholder alts
   if(a.images){
-    parts.push('IMAGES: '+a.images.total+' total, '+a.images.withAlt+' with alt, '+a.images.withoutAlt+' missing alt'+(a.images.sample.some(function(i){return i.lazy;})?' (some lazy-loaded)':''));
+    var imgLine='IMAGES: '+a.images.total+' total, '+a.images.withAlt+' with alt, '+a.images.withoutAlt+' missing alt'+(a.images.sample&&a.images.sample.some(function(i){return i.lazy;})?' (some lazy-loaded)':'');
+    if(a.images.placeholderAlts&&a.images.placeholderAlts.length){
+      imgLine+=' | PLACEHOLDER-ALT (SC 1.1.1 quality failure): '+a.images.placeholderAlts.slice(0,5).map(function(t){return '"'+t+'"';}).join(', ');
+    }
+    if(a.images.sample&&a.images.sample.length){
+      var altSamples=a.images.sample.slice(0,6).map(function(i){return i.altMissing?'[MISSING-ALT]':(i.decorative?'[decorative alt=""]':'"'+(i.alt||'').slice(0,40)+'"');});
+      imgLine+=' | alt samples: '+altSamples.join(' | ');
+    }
+    parts.push(imgLine);
+  }
+
+  // A11Y-specific signals for WCAG test generation
+  var a11yBits=[];
+  if(a.lang===null||a.lang===undefined)a11yBits.push('NO-LANG (SC 3.1.1 FAIL)');
+  else a11yBits.push('lang='+a.lang);
+  if(a.landmarks){
+    var missing=[];
+    if(!a.landmarks.main)missing.push('main');
+    if(!a.landmarks.nav)missing.push('nav');
+    if(missing.length)a11yBits.push('MISSING-LANDMARKS (SC 1.3.1): '+missing.join(','));
+  }
+  if(!a.skipLink)a11yBits.push('NO-SKIP-LINK (SC 2.4.1 likely FAIL)');
+  if(a.iconOnlyButtonsWithoutLabel)a11yBits.push(a.iconOnlyButtonsWithoutLabel+' icon-only button(s) WITHOUT accessible name (SC 4.1.2 FAIL)');
+  if(a.genericLinks&&a.genericLinks.length)a11yBits.push(a.genericLinks.length+' generic link text (SC 2.4.4 FAIL): '+a.genericLinks.slice(0,5).map(function(l){return '"'+l.text+'"';}).join(', '));
+  if(a.ariaTally&&a.ariaTally.tabindexPositive>0)a11yBits.push('tabindex>0 used '+a.ariaTally.tabindexPositive+'x (SC 2.4.3 likely FAIL)');
+  if(a.outlineSuppressed)a11yBits.push('outline:none/0 present (SC 2.4.7 verify replacement focus style)');
+  if(a.autoplayMedia)a11yBits.push('AUTOPLAY media present (SC 1.4.2, 2.2.2)');
+  if(a.headingCounts){
+    if((a.headingCounts.h1||0)===0)a11yBits.push('NO H1 (SC 2.4.6)');
+    if((a.headingCounts.h1||0)>1)a11yBits.push((a.headingCounts.h1)+' H1 tags — should be 1 (SC 1.3.1)');
+    // Detect duplicate h2 text as a signal
+    if(a.headings){
+      var h2Texts=a.headings.filter(function(h){return h.tag==='h2';}).map(function(h){return h.text;});
+      var dupeSet={};var dupes=[];
+      h2Texts.forEach(function(t){if(dupeSet[t])dupes.push(t);else dupeSet[t]=1;});
+      if(dupes.length)a11yBits.push('DUPLICATE H2: "'+dupes[0]+'" repeats (SC 2.4.6)');
+    }
+  }
+  if(a11yBits.length)parts.push('A11Y SIGNALS: '+a11yBits.join(' | '));
+
+  // Form a11y detail — label association, autocomplete, aria-invalid
+  if(a.forms&&a.forms.length){
+    a.forms.forEach(function(f,i){
+      var issues=[];
+      if(f.fieldsWithoutLabel>0)issues.push(f.fieldsWithoutLabel+' field(s) without programmatic label (SC 1.3.1/3.3.2/4.1.2)');
+      if(f.fieldsWithoutAutocomplete>0)issues.push(f.fieldsWithoutAutocomplete+' field(s) missing autocomplete token (SC 1.3.5, also breaks 3.3.8)');
+      if(issues.length)parts.push('FORM['+i+'] A11Y ISSUES: '+issues.join(' | '));
+      if(f.fields&&f.fields.length){
+        var unlabeled=f.fields.filter(function(fl){return !fl.hasLabel;}).slice(0,5);
+        if(unlabeled.length)parts.push('  UNLABELED FIELDS: '+unlabeled.map(function(fl){return (fl.name||fl.id||fl.placeholder||fl.type)+' ['+fl.type+(fl.required?' required':'')+']';}).join(', '));
+      }
+    });
   }
 
   // Interactive elements
@@ -2192,6 +2348,7 @@ function buildPrompt(catId,base,opts){
     PERF:'CROSS-CUTTING CHECKS:\n• Core Web Vitals: LCP<2.5s, FID<100ms, CLS<0.1, TTFB<600ms per page\n• Network: 3G simulation, cache-cold vs cache-warm, first visit vs return visit\n• Assets: images optimized + lazy loaded, fonts not render-blocking, JS/CSS minified, gzip/brotli\n• Stability: no memory leaks on navigation, no jank on scroll, rapid interaction stability\n• Caching: proper Cache-Control/ETag headers, stale content not served after update',
     SEO:'CROSS-CUTTING CHECKS:\n• Meta: unique title (50-60 chars) + description (150-160 chars) per page\n• Structure: exactly 1 H1, logical H2/H3 hierarchy (no skipping), semantic HTML\n• Images: all have alt text, OG image present and >200x200px\n• Technical: canonical URL, sitemap.xml valid, robots.txt correct, structured data valid\n• Links: no broken internal links, no redirect chains >3 hops, SEO-friendly URLs\n• Indexability: pages indexable, no accidental noindex, no duplicate content',
     CONT:'CROSS-CUTTING CHECKS:\n• Accuracy: all text accurate, no spelling/grammar errors, consistent terminology\n• Completeness: no placeholder/Lorem Ipsum, no TODO/FIXME visible, no template tags showing\n• Formatting: proper paragraphs/lists/headings, consistent date/number/currency formats\n• Links: CTAs match destinations, phone numbers clickable on mobile, emails have mailto\n• Freshness: copyright year current, no outdated information, consistent data across pages\n• Encoding: no raw HTML entities (&amp; &nbsp;), no invisible Unicode, no markdown rendered as text',
+    A11Y:'THINK LIKE A SCREEN-READER USER AND A KEYBOARD-ONLY USER AND A USER WITH COGNITIVE DISABILITY. Target is WCAG 2.2 AA full + key AAA + WAI-ARIA 1.2 + APG pattern conformance + COGA cognitive guidance. Every FAIL must cite the exact SC number (e.g. SC 1.4.3, SC 2.4.11, SC 3.3.8).\nAUTOMATED CHECKS (axe-core + custom assertions) — these are the easy wins, automate all of them:\n• 1.1.1 Non-text Content — every <img> has alt; decorative images have empty alt; complex images have long description or aria-describedby; no placeholder/filename alts (F30)\n• 1.3.1 Info and Relationships — correct semantic HTML (section, article, nav, header, main, footer), <label> associated with inputs, <th scope>, <fieldset><legend> for groups, no <div> used for buttons/links\n• 1.3.5 Identify Input Purpose — autocomplete tokens on name/email/tel/address/cc fields (HTML spec list), correct inputmode on mobile\n• 1.4.3 Contrast (Min) AA — text 4.5:1 / large text 3:1; 1.4.6 AAA if targeting enhanced\n• 1.4.10 Reflow — no horizontal scroll at 320 CSS px viewport except data tables/maps\n• 1.4.11 Non-text Contrast — UI components + graphical objects 3:1 against adjacent colors (focus rings, form borders, icon buttons)\n• 1.4.12 Text Spacing — content doesnt clip or overlap when line-height=1.5, paragraph-spacing=2x, letter-spacing=0.12em, word-spacing=0.16em applied\n• 2.1.1 Keyboard — no tabindex values > 0 (F44), every pointer handler has a keyboard equivalent (F54)\n• 2.4.2 Page Titled — unique, descriptive <title>\n• 2.4.6 Headings and Labels — exactly one <h1>, no skipped levels, non-empty text\n• 2.4.7 Focus Visible — :focus-visible styled on every interactive element, outline not set to none without replacement (F78)\n• 2.5.3 Label in Name — visible label text is contained in the accessible name (F96) e.g. a button showing "Submit" must have accessible name containing "Submit"\n• 2.5.8 Target Size (Min) — every interactive target ≥ 24×24 CSS px OR 24px-circle spacing test passes; inline-in-sentence exception allowed\n• 3.1.1 Language of Page — <html lang> present and valid BCP-47\n• 3.1.2 Language of Parts — content in different languages has lang attribute\n• 3.2.6 Consistent Help — help/contact/chat appears in same relative position across pages\n• 3.3.1 Error Identification — errors in text, programmatically associated via aria-describedby\n• 3.3.2 Labels or Instructions — every input has <label for> OR aria-labelledby OR aria-label; no label= attribute misuse\n• 4.1.2 Name, Role, Value — every custom widget has role + accessible name + current state exposed; no empty buttons (F89); no aria-* on elements where prohibited\n• 4.1.3 Status Messages — dynamic updates use role=status / role=alert / role=log, not just aria-live on a div\nKEYBOARD-ONLY GATES (manual pass required, agent must create test cases that REQUIRE tester to perform):\n• Full Tab/Shift+Tab walk — focus order matches visual reading order, no trap, nothing skipped\n• APG pattern conformance — for EVERY modal, combobox, menu, tabs, disclosure, accordion, tree, slider on the page, walk its full APG keyboard contract (Enter/Space/Esc/Home/End/arrows)\n• 2.4.11 Focus Not Obscured — Tab to every element; with sticky header/footer/cookie banner present, verify focused element never 100% hidden; apply C43 scroll-padding fix if it fails\n• 2.4.13 Focus Appearance — focus ring ≥2 CSS px around perimeter, 3:1 contrast vs unfocused state AND adjacent colors\n• 2.5.7 Dragging — every drag operation (sliders, sortable lists, kanban, map pan) has a click/tap alternative\nAPG WIDGET CONTRACTS (check every custom widget against its APG pattern — cite the pattern name + keys tested):\n• Modal dialog: role=dialog + aria-modal=true + aria-labelledby; Tab/Shift+Tab trapped inside; Esc closes; initial focus appropriate (first focusable OR title for large content OR least destructive for destructive action); focus returns to invoker on close; background inert via aria-modal or inert attribute; close button in tab sequence; never set aria-hidden on ancestor of dialog\n• Combobox: textbox and listbox are SIBLINGS linked by aria-controls (never nested); DOM focus stays on textbox; virtual focus via aria-activedescendant; aria-expanded reflects popup state; aria-autocomplete set (none/list/both); Down opens + moves virtual focus to first option, Up to last; Enter accepts; Esc closes (may clear); Alt+Down/Up toggles without breaking text edit; standard text editing keys (Backspace, arrows within text, Ctrl+A) NOT intercepted\n• Menu / menubar: roles menubar (persistent)/menu (popup), items menuitem / menuitemcheckbox / menuitemradio / separator (not focusable); roving tabindex (one item tabindex=0 rest -1); ←→ within menubar, ↑↓ within menu, Enter/Space activates, Esc closes to trigger, first-letter typeahead, Right on parent opens submenu, Left closes to parent; aria-haspopup=menu + aria-expanded on trigger\n• Tabs: roles tablist (aria-orientation if vertical) / tab (aria-selected + aria-controls) / tabpanel (aria-labelledby back to tab + tabindex=0 if no focusable content); roving tabindex on tabs; Tab enters tablist to active tab then exits to panel; arrows navigate within tablist; automatic vs manual activation declared\n• Disclosure / accordion: trigger is a <button> with aria-expanded + aria-controls pointing to panel; panel hidden via hidden attribute or display:none (not just visually)\n• Tooltip: role=tooltip, triggered by focus AND hover, dismissible with Esc, hoverable without disappearing (SC 1.4.13), persistent until dismissed or trigger loses focus\nWAI-ARIA 1.2 CHECKS:\n• Accessible name precedence: verify name comes from correct source (labelledby > label > native > text content for name-from-content roles > title). title attribute alone is never acceptable as only name.\n• Required owned children: composite roles MUST own their required children (menu→menuitem, listbox→option, tablist→tab, radiogroup→radio). A menu with no menuitem is broken.\n• aria-hidden pitfalls: never on ancestor of focusable content without also setting tabindex=-1 or inert; hidden focusables still receive tab focus; never on ancestor of live dialog\n• role=presentation/none: only strips semantics — focusable children stay in a11y tree\n• Live regions: role=status (polite), role=alert (assertive, interrupts), role=log (appended); aria-busy=true during async updates; aria-atomic=true when whole region matters\n• aria-current: page/step/location/date/time/true on current item in navigation or breadcrumb\n• aria-invalid on field when validation fails, removed when corrected\nSCREEN READER GATES (mandatory manual with NVDA+Firefox AND VoiceOver+Safari minimum, JAWS+Edge if available):\n• Every dynamic update is announced (form submission, validation error, async content load, modal open/close, toast, tab change)\n• Every dialog announces on open (title + description + first element) and restores focus on close\n• Every landmark is named (main, nav, aside, complementary — if multiple of same type, each needs aria-label)\n• Every custom widget is announced with role + name + current state + position (e.g., "Settings, menu, collapsed, 3 of 5")\n• Form navigation by Tab AND by browse mode both work; labels announced; required state announced; error state announced\n• TalkBack+Chrome and VoiceOver+iOS for mobile\nZOOM & REFLOW GATES (manual):\n• 200% browser zoom — all content usable, no horizontal scroll, nothing clipped\n• 400% zoom — reflow to single column (SC 1.4.10)\n• Text-only 200% zoom — no content loss (SC 1.4.4)\n• Text-spacing bookmarklet (line-height 1.5, paragraph 2x, letter 0.12em, word 0.16em) — no overlap or clip\nCOGNITIVE (COGA) GATES — beyond WCAG but critical for a "perfect" audit:\n• Labels clear and plain-language (instructions ≤15 words, no double negatives, acronyms defined)\n• Every icon-only control has a text label or tooltip\n• Breadcrumb or "you are here" on every page in a set\n• Help link in same place on every page (ties to 3.2.6)\n• No auto-play audio/video; carousels have visible pause before first auto-advance (SC 2.2.2)\n• Multi-step forms show entered values on review; Back never loses data\n• Session timeout warned ≥ 5 min before expiry; can extend without data loss (SC 2.2.1)\n• Long numbers chunked (credit cards in 4-digit groups)\n• Password manager auto-fill works — autocomplete tokens correct, paste NOT blocked on any password/OTP/code field (SC 3.3.8)\n• Extensions (password manager, toolbars) not blocked\n• prefers-reduced-motion honored (no essential animation loss when respected)\n• prefers-color-scheme respected OR explicit theme toggle\nAUTHENTICATION DEEP-DIVE (SC 3.3.7 + 3.3.8):\n• No CAPTCHA requiring transcription of distorted text or audio (fails 3.3.8)\n• OTP/code fields accept pasted multi-character value (never "enter 3rd, 4th, 6th character only")\n• Passkey/WebAuthn or magic-link option offered\n• Account recovery does NOT require remembering a security question answer\n• Info entered in step 1 not re-requested in step 2 (SC 3.3.7)\nTEST CASE QUALITY (MANDATORY OUTPUT FORMAT — rejected if not followed): every A11Y test case title MUST begin with "[WCAG SC X.X.X — Level A/AA/AAA]" and include the APG pattern name in parentheses for widget tests (e.g. "[WCAG SC 2.4.3 — Level A] Focus order within combobox popup (APG: Combobox)"). Steps MUST list exact keyboard keys or ARIA attributes or axe-core rule IDs being verified. Expected Result MUST state the observable pass criterion — for screen reader cases, quote the expected announcement text (e.g. Expected: "NVDA announces: Settings button, collapsed"). For automated cases, name the axe-core rule (e.g. "axe-core rule color-contrast returns 0 violations"). For manual gates, prefix Expected with "[MANUAL]". No vague "check accessibility" tests. Reject any title lacking a SC number.',
   };
   // Build site-wide summary from crawl data for generalized test cases
   var siteSummary='';
@@ -2446,6 +2603,52 @@ async function startQA(resume=false){
   S.cats=Object.keys(CAT_DEFS).filter(c=>{const cb=document.querySelector('#chip-'+c+' input');return cb&&cb.checked;});
   if(!S.cats.length){showToast('Select at least one test category.','warn');return;}
 
+  // FIX-7: Model strength check — A11Y category has a huge prompt; weak/cheap
+  // models produce generic tests and often hit max_tokens mid-generation.
+  if(S.cats.indexOf('A11Y')>-1 && !resume){
+    const prov=getProvider();
+    const modelName=(prov.model||'').toLowerCase();
+    const isWeakModel=/free|mini|small|haiku|8b|7b|3b|1b|flash-lite|nano/.test(modelName);
+    if(isWeakModel){
+      const proceed=await new Promise(function(res){
+        showConfirm('A11Y category uses a long prompt (WCAG 2.2 + APG + COGA). Your current model "'+prov.model+'" appears to be a lightweight/free tier which may produce generic tests or truncate mid-generation. Recommended: Claude Sonnet 4.x, GPT-4, or equivalent. Proceed anyway?',function(){res(true);});
+        // showConfirm doesn't have a "no" path by design — wire Esc / Cancel via close
+        const cancelBtn=document.getElementById('confirmOverlay').querySelector('.close,[onclick*="closeConfirm"]');
+        if(cancelBtn){const orig=cancelBtn.onclick;cancelBtn.onclick=function(e){if(orig)orig.call(cancelBtn,e);res(false);};}
+      });
+      if(!proceed){log('A11Y generation cancelled — switch to a stronger model and retry.','warn');return;}
+    }
+  }
+
+  // FIX-8: Dry-run preview — estimate pages, test cases, cost before committing
+  if(!resume){
+    const pageCount=(S.crawledPages||[]).length;
+    const estTcsPerCat=pageCount>=10?8:(pageCount>=5?6:5);
+    const estTotal=S.cats.length*estTcsPerCat*Math.max(1,Math.ceil(pageCount/8));
+    const prov=getProvider();
+    // Rough token estimate: each batch is ~6k tokens in, ~3k tokens out = ~9k total
+    // Per batch: prompt ~5000 tokens, completion ~3000 tokens. 16k max_tokens hard cap.
+    const batchesPerCat=Math.max(1,Math.ceil(pageCount/(S.cats.indexOf('A11Y')>-1?3:8)));
+    const totalBatches=S.cats.length*batchesPerCat;
+    const estInputTokens=totalBatches*5000;
+    const estOutputTokens=totalBatches*3000;
+    const previewLines=[
+      'Pages crawled: '+pageCount,
+      'Categories selected: '+S.cats.join(', '),
+      'Estimated test cases: ~'+estTotal,
+      'Batches to run: '+totalBatches+' ('+batchesPerCat+' per category)',
+      'Provider/model: '+(prov.name||'')+' / '+(prov.model||''),
+      'Estimated tokens: ~'+Math.round(estInputTokens/1000)+'k in, ~'+Math.round(estOutputTokens/1000)+'k out',
+      S.cats.indexOf('A11Y')>-1?'A11Y pipeline: full WCAG 2.2 AA + AAA + APG + COGA + 10-layer automation':'',
+    ].filter(Boolean);
+    const proceed=await new Promise(function(res){
+      showConfirm('Ready to start?\n\n'+previewLines.join('\n')+'\n\nProceed with generation?',function(){res(true);});
+      const cancelBtn=document.getElementById('confirmOverlay').querySelector('.close,[onclick*="closeConfirm"]');
+      if(cancelBtn){const orig=cancelBtn.onclick;cancelBtn.onclick=function(e){if(orig)orig.call(cancelBtn,e);res(false);};}
+    });
+    if(!proceed){log('Generation cancelled from preview.','warn');return;}
+  }
+
   qaAborted=false;isRunning=true;configLocked=true;postRunState(true);
   document.getElementById('runBtn').textContent='RUNNING';document.getElementById('runBtn').classList.add('running');document.getElementById('runBtn').disabled=true;
   document.getElementById('resumeBtn').disabled=true;setDot('run','RUNNING');
@@ -2567,7 +2770,7 @@ async function startQA(resume=false){
     setDot('run','Running: '+shortLabel);
     log('Starting: '+stepLabel,'info');
     // Dynamic loader — heavier categories get slower progress
-    const weight={SEC:0.6,UIUX:0.8,FN:0.9,API:1.0,PERF:1.2,SEO:1.2,CONT:1.3};
+    const weight={SEC:0.6,UIUX:0.8,FN:0.9,API:1.0,PERF:1.2,SEO:1.2,CONT:1.3,A11Y:0.9};
     const speed=(weight[step]||1.0)*0.7; // lower = slower progress
     const interval=500+Math.round(Math.random()*200);
     const stepTimer=setInterval(()=>{if(innerPct<92){innerPct+=Math.random()*speed+0.5;setProg('Running: '+stepLabel,basePct+stepRange*(Math.min(innerPct,92)/100),'Step '+(i+1)+'/'+totalSteps);}},interval);activeTimers.push(stepTimer);
@@ -2589,7 +2792,11 @@ async function startQA(resume=false){
       // call the AI once per batch so every page gets real coverage.
       // Otherwise fall back to the single-call path.
       const crawlList=(S.crawledPages||[]);
-      const BATCH_SIZE=8; // 8 pages per AI call
+      // A11Y prompt is roughly 3× larger than other categories (full WCAG 2.2
+      // + APG + COGA checklist). Reduce batch to avoid max_tokens overruns
+      // on cheaper tiers (OpenRouter free, Groq free, etc.). SEC is also
+      // prompt-heavy — give it a smaller batch too.
+      const BATCH_SIZE=(step==='A11Y')?3:(step==='SEC')?5:8;
       const MIN_FOR_BATCH=5;
       const shouldBatch=crawlList.length>=MIN_FOR_BATCH;
       text='';
@@ -2735,8 +2942,286 @@ async function startQA(resume=false){
   document.getElementById('runBtn').textContent='\u25B6 RUN';document.getElementById('runBtn').classList.remove('running');document.getElementById('runBtn').disabled=false;
   document.getElementById('resumeBtn').disabled=false;
 
+  // FIX-1: WCAG coverage validator — runs when A11Y was in the tested categories
+  try{
+    const cov=validateA11YCoverage();
+    if(cov){
+      const missingCount=cov.missingA.length+cov.missingAA.length;
+      if(missingCount>0||cov.unprefixed.length>0){
+        let msg='A11Y coverage: '+cov.coveragePct+'% ('+cov.totalCovered+'/'+cov.totalRequired+' WCAG 2.2 A+AA SCs covered across '+cov.totalA11YTests+' tests).';
+        if(cov.missingA.length)msg+=' Missing Level A: '+cov.missingA.map(function(sc){return sc+' '+(WCAG_SC_NAMES[sc]||'');}).join(', ')+'.';
+        if(cov.missingAA.length)msg+=' Missing Level AA: '+cov.missingAA.map(function(sc){return sc+' '+(WCAG_SC_NAMES[sc]||'');}).join(', ')+'.';
+        if(cov.unprefixed.length)msg+=' '+cov.unprefixed.length+' A11Y test(s) missing [WCAG SC X.X.X] tag in title.';
+        log(msg,'warn',{simple:'Some WCAG 2.2 Success Criteria are not covered by any generated test case. Click Fix to generate targeted tests for the missing SCs.',tech:JSON.stringify(cov,null,2),fix:function(){regenerateMissingSCs(cov.missingA,cov.missingAA);}});
+        showA11YCoverageBanner(cov);
+      }else{
+        log('A11Y coverage: 100% ('+cov.totalCovered+'/'+cov.totalRequired+' WCAG 2.2 A+AA SCs covered — no gaps).','ok');
+      }
+    }
+  }catch(e){console.warn('[qa-agent] validateA11YCoverage failed',e);}
+
+  // FIX-3: Auto-offer automation generation when A11Y is in tested categories.
+  // The A11Y automation script pipeline is 10-layer; many users miss the
+  // manual "Generate Automation Script" step and end up with test cases only.
+  try{
+    if(Array.isArray(S.cats)&&S.cats.indexOf('A11Y')>-1&&allTCRows.length>0){
+      setTimeout(function(){
+        showConfirm('Generate A11Y automation script now? The 10-layer pipeline (axe-core + Pa11y + Lighthouse + keyboard + ARIA + focus pixel diff + LLM judges + dynamic state scans) runs the actual accessibility checks. Skip and you have test cases only.',function(){showAutoModal();});
+      },800);
+    }
+  }catch(e){}
+
   // Auto-switch to Test Cases tab
   sw('tcs');
+}
+
+// FIX-1: UI banner showing WCAG coverage under the test-case table
+function showA11YCoverageBanner(cov){
+  try{
+    var tcInfo=document.getElementById('tcInfo');
+    if(!tcInfo)return;
+    var existing=document.getElementById('a11yCoverageBanner');
+    if(existing)existing.remove();
+    var bar=document.createElement('div');
+    bar.id='a11yCoverageBanner';
+    var color=cov.coveragePct>=95?'var(--success)':(cov.coveragePct>=80?'var(--warn)':'var(--danger)');
+    bar.style.cssText='margin:8px 0;padding:10px 12px;border:1px solid '+color+';border-radius:4px;background:rgba(0,0,0,.3);font-size:12px;color:var(--text);display:flex;align-items:center;gap:12px;flex-wrap:wrap';
+    var missingA=(cov.missingA||[]).slice(0,8).map(function(sc){return '<code style="color:'+color+'">'+sc+'</code>';}).join(', ');
+    var missingAA=(cov.missingAA||[]).slice(0,8).map(function(sc){return '<code style="color:'+color+'">'+sc+'</code>';}).join(', ');
+    var moreA=cov.missingA.length>8?' +'+(cov.missingA.length-8)+' more':'';
+    var moreAA=cov.missingAA.length>8?' +'+(cov.missingAA.length-8)+' more':'';
+    bar.innerHTML='<div style="font-weight:700;color:'+color+'">&#9888; A11Y Coverage '+cov.coveragePct+'%</div>'+
+      '<div style="flex:1;min-width:300px">'+cov.totalCovered+' of '+cov.totalRequired+' WCAG 2.2 A+AA SCs covered.'+
+      (cov.missingA.length?'<br><strong>Missing Level A ('+cov.missingA.length+'):</strong> '+missingA+moreA:'')+
+      (cov.missingAA.length?'<br><strong>Missing Level AA ('+cov.missingAA.length+'):</strong> '+missingAA+moreAA:'')+
+      (cov.unprefixed.length?'<br><em>'+cov.unprefixed.length+' test(s) missing [WCAG SC X.X.X] tag in title</em>':'')+
+      '</div>'+
+      '<button class="exp-btn primary-btn" onclick="regenerateMissingSCs('+JSON.stringify(cov.missingA).replace(/"/g,'&quot;')+','+JSON.stringify(cov.missingAA).replace(/"/g,'&quot;')+')" style="white-space:nowrap">&#8635; Regenerate gaps</button>';
+    tcInfo.parentNode.insertBefore(bar,tcInfo.nextSibling);
+  }catch(e){console.warn('[qa-agent] banner render failed',e);}
+}
+
+// FIX-6: Inline axe-style scanner that runs against the crawled pageAnalysis
+// data. No Playwright, no external deps — regex/heuristic rules in-browser.
+// Covers the 12 highest-impact WCAG 2.2 rules. Returns findings grouped by SC.
+function runInlineAxe(){
+  const pages=(S.crawledPages||[]).filter(function(p){return p.pageAnalysis;});
+  if(!pages.length){showToast('No page analysis available. Re-run the page scan.','warn');return null;}
+  const findings=[];
+  pages.forEach(function(p){
+    const a=p.pageAnalysis;const u=p.path||p.url||'';
+    // SC 3.1.1 Level A — html lang
+    if(!a.lang)findings.push({sc:'3.1.1',level:'A',severity:'Critical',rule:'html-has-lang',page:u,message:'<html> element missing lang attribute',fix:'Add lang="en" (or appropriate BCP-47 code) to the <html> tag'});
+    // SC 1.3.1 Level A — main landmark
+    if(a.landmarks&&!a.landmarks.main)findings.push({sc:'1.3.1',level:'A',severity:'Serious',rule:'landmark-one-main',page:u,message:'No <main> element or role="main"',fix:'Wrap the primary content in <main> or add role="main"'});
+    // SC 2.4.1 Level A — skip link
+    if(!a.skipLink||!/main|content|skip/i.test(a.skipLink.text||''))findings.push({sc:'2.4.1',level:'A',severity:'Serious',rule:'skip-link',page:u,message:'No skip-to-main-content link detected as first focusable element',fix:'Add a visible-on-focus <a href="#main">Skip to main content</a> as the first link'});
+    // SC 1.1.1 Level A — images
+    if(a.images){
+      if(a.images.withoutAlt>0)findings.push({sc:'1.1.1',level:'A',severity:'Critical',rule:'image-alt',page:u,message:a.images.withoutAlt+' image(s) missing alt attribute',fix:'Add descriptive alt="..." to each informative image, alt="" to decorative images'});
+      if(a.images.placeholderAlts&&a.images.placeholderAlts.length)findings.push({sc:'1.1.1',level:'A',severity:'Serious',rule:'image-alt-quality',page:u,message:'Placeholder alt text detected: '+a.images.placeholderAlts.slice(0,3).map(function(t){return '"'+t+'"';}).join(', ')+' — describes filename/category, not content',fix:'Replace with meaningful description of what the image conveys'});
+    }
+    // SC 4.1.2 Level A — icon-only buttons
+    if(a.iconOnlyButtonsWithoutLabel>0)findings.push({sc:'4.1.2',level:'A',severity:'Critical',rule:'button-name',page:u,message:a.iconOnlyButtonsWithoutLabel+' icon-only button(s) without accessible name',fix:'Add aria-label="..." to icon-only buttons (menu toggle, social icons, close buttons)'});
+    // SC 2.4.4 Level A — generic link text
+    if(a.genericLinks&&a.genericLinks.length>0)findings.push({sc:'2.4.4',level:'A',severity:'Serious',rule:'link-name-generic',page:u,message:a.genericLinks.length+' generic link text: '+a.genericLinks.slice(0,3).map(function(l){return '"'+l.text+'"';}).join(', '),fix:'Replace with descriptive text (e.g. "Read more about Joy Home initiative") or add aria-label'});
+    // Form a11y (SCs 1.3.1, 3.3.2, 4.1.2, 1.3.5)
+    if(a.forms&&a.forms.length){
+      a.forms.forEach(function(f,i){
+        if(f.fieldsWithoutLabel>0)findings.push({sc:'3.3.2',level:'A',severity:'Critical',rule:'form-label',page:u,message:'Form '+(i+1)+': '+f.fieldsWithoutLabel+' field(s) without programmatic label',fix:'Associate each <input> with a <label for="..."> OR add aria-label / aria-labelledby'});
+        if(f.fieldsWithoutAutocomplete>0)findings.push({sc:'1.3.5',level:'AA',severity:'Moderate',rule:'autocomplete-valid',page:u,message:'Form '+(i+1)+': '+f.fieldsWithoutAutocomplete+' field(s) missing autocomplete token',fix:'Add autocomplete="name|email|tel|street-address" per HTML spec — also required for SC 3.3.8 password manager support'});
+      });
+    }
+    // SC 2.4.3 Level A — tabindex positive
+    if(a.ariaTally&&a.ariaTally.tabindexPositive>0)findings.push({sc:'2.4.3',level:'A',severity:'Serious',rule:'tabindex',page:u,message:a.ariaTally.tabindexPositive+' element(s) use tabindex > 0',fix:'Remove positive tabindex values; use DOM order or tabindex="0" instead'});
+    // SC 2.4.7 Level AA — outline suppressed
+    if(a.outlineSuppressed)findings.push({sc:'2.4.7',level:'AA',severity:'Serious',rule:'focus-visible',page:u,message:'CSS "outline: none" or "outline: 0" detected — focus indicator likely suppressed',fix:'Add :focus-visible { outline: 2px solid <high-contrast-color>; outline-offset: 2px; } or equivalent'});
+    // SC 1.4.2 Level A — autoplay
+    if(a.autoplayMedia)findings.push({sc:'1.4.2',level:'A',severity:'Serious',rule:'no-autoplay-audio',page:u,message:'<video> or <audio> with autoplay attribute',fix:'Remove autoplay or provide mute/pause control within 3 seconds (SC 1.4.2, 2.2.2)'});
+    // SC 2.4.6 — headings
+    if(a.headingCounts){
+      if((a.headingCounts.h1||0)===0)findings.push({sc:'2.4.6',level:'AA',severity:'Moderate',rule:'page-has-heading-one',page:u,message:'Page has no <h1>',fix:'Add one descriptive <h1> per page as the main content heading'});
+      if((a.headingCounts.h1||0)>1)findings.push({sc:'1.3.1',level:'A',severity:'Moderate',rule:'heading-one-count',page:u,message:(a.headingCounts.h1)+' <h1> tags on page (should be 1)',fix:'Keep one <h1> per page; demote others to <h2>/<h3>'});
+    }
+    if(a.headings&&a.headings.length){
+      const h2s=a.headings.filter(function(h){return h.tag==='h2';}).map(function(h){return h.text;});
+      const seen={};const dups={};
+      h2s.forEach(function(t){if(seen[t])dups[t]=(dups[t]||1)+1;else seen[t]=1;});
+      Object.keys(dups).forEach(function(t){findings.push({sc:'2.4.6',level:'AA',severity:'Moderate',rule:'heading-distinct',page:u,message:'Duplicate <h2> "'+t+'" repeats '+(dups[t]+1)+' times',fix:'Make each heading unique and descriptive of its section'});});
+    }
+  });
+  return {pages:pages.length,findings,bySC:findings.reduce(function(acc,f){(acc[f.sc]=acc[f.sc]||[]).push(f);return acc;},{})};
+}
+
+// FIX-6: Trigger inline axe scan + render findings in the A11Y panel
+function runInlineAxeAndRender(){
+  const result=runInlineAxe();
+  if(!result)return;
+  const wrap=document.getElementById('a11yReportPanel')||document.getElementById('logc');
+  const existing=document.getElementById('inlineAxeResults');
+  if(existing)existing.remove();
+  const totalFindings=result.findings.length;
+  const byLevel={A:0,AA:0,AAA:0};
+  const bySeverity={Critical:0,Serious:0,Moderate:0,Minor:0};
+  result.findings.forEach(function(f){byLevel[f.level]=(byLevel[f.level]||0)+1;bySeverity[f.severity]=(bySeverity[f.severity]||0)+1;});
+
+  let html='<div id="inlineAxeResults" style="background:rgba(15,23,42,.6);border:1px solid var(--accent);border-radius:6px;padding:14px 16px;margin:10px 0;font-family:var(--mono);font-size:12px">';
+  html+='<div style="display:flex;align-items:center;gap:14px;margin-bottom:12px;flex-wrap:wrap">';
+  html+='<strong style="color:var(--accent);font-size:14px">&#128270; Inline WCAG Scan</strong>';
+  html+='<span>'+result.pages+' pages scanned</span>';
+  html+='<span style="color:'+(totalFindings===0?'var(--success)':'var(--danger)')+';font-weight:700">'+totalFindings+' findings</span>';
+  html+='<span style="color:var(--muted)">· Critical '+bySeverity.Critical+' · Serious '+bySeverity.Serious+' · Moderate '+bySeverity.Moderate+'</span>';
+  html+='</div>';
+  if(totalFindings===0){
+    html+='<div style="color:var(--success)">&#10003; No static WCAG violations detected on scanned pages. Run full automation (axe-core + Pa11y + Lighthouse) for complete coverage.</div>';
+  }else{
+    html+='<table style="width:100%;border-collapse:collapse;font-size:11px"><thead><tr style="background:rgba(30,58,95,.2)"><th style="padding:6px 8px;text-align:left">SC</th><th style="padding:6px 8px;text-align:left">Level</th><th style="padding:6px 8px;text-align:left">Severity</th><th style="padding:6px 8px;text-align:left">Rule</th><th style="padding:6px 8px;text-align:left">Page</th><th style="padding:6px 8px;text-align:left">Issue</th><th style="padding:6px 8px;text-align:left">Fix</th></tr></thead><tbody>';
+    result.findings.forEach(function(f){
+      const sColor=f.severity==='Critical'?'var(--danger)':(f.severity==='Serious'?'var(--warn)':'var(--muted)');
+      html+='<tr style="border-top:1px solid var(--border)">';
+      html+='<td style="padding:6px 8px"><strong>'+f.sc+'</strong></td>';
+      html+='<td style="padding:6px 8px">'+f.level+'</td>';
+      html+='<td style="padding:6px 8px;color:'+sColor+';font-weight:700">'+f.severity+'</td>';
+      html+='<td style="padding:6px 8px;color:var(--muted);font-family:var(--mono);font-size:10px">'+f.rule+'</td>';
+      html+='<td style="padding:6px 8px;font-size:10px">'+escHtml(f.page)+'</td>';
+      html+='<td style="padding:6px 8px">'+escHtml(f.message)+'</td>';
+      html+='<td style="padding:6px 8px;color:var(--muted);font-size:10px">'+escHtml(f.fix)+'</td>';
+      html+='</tr>';
+    });
+    html+='</tbody></table>';
+    html+='<div style="margin-top:10px;font-size:10px;color:var(--muted)">Static HTML scan covers ~12 WCAG rules. For complete coverage run the generated automation script (axe-core + Pa11y + Lighthouse + keyboard + ARIA + focus pixel diff + LLM judges).</div>';
+  }
+  html+='</div>';
+  // Insert after the A11Y panel if present, else into log
+  if(wrap&&wrap.id==='a11yReportPanel'){
+    wrap.insertAdjacentHTML('afterend',html);
+  }else{
+    const div=document.createElement('div');div.innerHTML=html;
+    wrap.appendChild(div.firstChild);
+  }
+  log('Inline WCAG scan complete: '+totalFindings+' findings across '+result.pages+' pages','acc');
+  showToast('Inline scan: '+totalFindings+' WCAG findings.',totalFindings===0?'success':'warn',4000);
+  return result;
+}
+
+// FIX-5: Remediation report generator. Takes inline-axe findings + any FAIL
+// test cases, groups by rule/SC, asks the LLM for a code-level fix per rule
+// (with before/after snippet + WCAG link), renders a standalone HTML report.
+async function generateRemediationReport(){
+  if(!getApiKey()){showToast('Verify your API key first.','warn');return;}
+  if(isRunning){showToast('Wait for the current run to finish.','warn');return;}
+  const inlineResult=runInlineAxe();
+  const inlineFindings=inlineResult?inlineResult.findings:[];
+  // Also include FAIL test cases that cite a WCAG SC
+  const failedTCs=(allTCRows||[]).filter(function(r){return (r.status||'').toLowerCase()==='fail';}).map(function(r){
+    return {sc:extractWCAGSC(r.name||r.scenario||''),level:null,severity:r.priority||'Moderate',rule:'test-case-fail',page:r.module||'',message:r.name||r.scenario||r.id,fix:r.expected||''};
+  }).filter(function(f){return f.sc;});
+  const all=inlineFindings.concat(failedTCs);
+  if(!all.length){showToast('No findings to remediate — site looks clean or no tests were executed.','info');return;}
+
+  // Group by rule+sc
+  const groups={};
+  all.forEach(function(f){
+    const key=f.sc+'|'+f.rule;
+    if(!groups[key]){groups[key]={sc:f.sc,rule:f.rule,level:f.level,severity:f.severity,message:f.message,pages:[],count:0,fix:f.fix};}
+    groups[key].count++;
+    if(groups[key].pages.indexOf(f.page)<0&&groups[key].pages.length<10)groups[key].pages.push(f.page);
+  });
+  const grouped=Object.values(groups);
+
+  isRunning=true;postRunState(true);
+  log('Generating remediation report for '+grouped.length+' unique issue(s)...','acc');
+  try{
+    const prompt='You are a senior front-end accessibility engineer. For each finding below, produce a remediation entry in JSON. Include: (1) sc, (2) wcagTitle, (3) impact (short), (4) rootCause (short), (5) beforeCode (HTML snippet showing the violating pattern), (6) afterCode (HTML snippet with the fix applied — use realistic attribute values), (7) explanation (why this fix works, ~30 words), (8) understandingUrl (W3C Understanding doc URL in format https://www.w3.org/WAI/WCAG22/Understanding/<slug>.html). Return a JSON array, no prose around it.\n\nFINDINGS:\n'+grouped.map(function(g,i){return '['+(i+1)+'] SC '+g.sc+' rule="'+g.rule+'" severity='+g.severity+' on '+g.pages.length+' page(s). Issue: '+g.message+'. Suggested fix: '+g.fix;}).join('\n')+'\n\nReturn ONLY the JSON array.';
+    const resp=await callAI(prompt);
+    let entries=[];
+    try{
+      const jsonStart=resp.indexOf('[');const jsonEnd=resp.lastIndexOf(']');
+      if(jsonStart>=0&&jsonEnd>jsonStart)entries=JSON.parse(resp.slice(jsonStart,jsonEnd+1));
+    }catch(e){console.warn('[qa-agent] remediation JSON parse failed, using fallback',e);}
+    // If LLM output is unusable, fall back to the groups we already have
+    if(!entries.length)entries=grouped.map(function(g){return {sc:g.sc,wcagTitle:WCAG_SC_NAMES[g.sc]||'',impact:g.message,rootCause:'',beforeCode:'',afterCode:'',explanation:g.fix,understandingUrl:'https://www.w3.org/TR/WCAG22/#'+(g.sc?g.sc.replace(/\./g,'-'):'')};});
+
+    // Render to HTML
+    const hostname=(function(){try{return new URL(S.url).hostname;}catch(e){return S.url;}})();
+    let html='<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><title>Remediation Report — '+hostname+'</title>';
+    html+='<style>body{font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:1100px;margin:20px auto;padding:0 20px;background:#0f172a;color:#e2e8f0;line-height:1.5}h1{color:#7dd3fc;border-bottom:2px solid #334155;padding-bottom:8px}h2{color:#facc15;margin-top:32px;border-left:4px solid #facc15;padding-left:10px}h3{color:#94a3b8;margin-top:0}.meta{color:#94a3b8;font-size:13px;margin-bottom:20px}.entry{background:#1e293b;border:1px solid #334155;border-radius:6px;padding:16px;margin-bottom:20px}.sc-badge{display:inline-block;background:#7dd3fc;color:#0f172a;padding:2px 8px;border-radius:3px;font-weight:700;font-family:monospace;font-size:11px;margin-right:8px}.level-A{background:#fca5a5}.level-AA{background:#facc15}.level-AAA{background:#86efac}pre{background:#020617;border:1px solid #334155;border-radius:4px;padding:10px;overflow:auto;font-size:12px;line-height:1.4;font-family:"SF Mono",Consolas,monospace}.before{border-left:3px solid #ef4444}.after{border-left:3px solid #22c55e}.label{font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#94a3b8;margin-bottom:4px}.explanation{background:#0c4a6e;padding:10px;border-radius:4px;font-size:13px;margin-top:10px}a{color:#7dd3fc}.impact{color:#fca5a5;font-weight:600}</style></head><body>';
+    html+='<h1>Accessibility Remediation Report</h1>';
+    html+='<div class="meta"><strong>Site:</strong> '+escHtml(S.url)+' &nbsp;·&nbsp; <strong>Date:</strong> '+new Date().toLocaleString()+' &nbsp;·&nbsp; <strong>Issues:</strong> '+entries.length+' unique rules across '+(inlineResult?inlineResult.pages:0)+' pages</div>';
+    html+='<p>Each entry below shows how to fix one WCAG 2.2 violation. Apply the <code>after</code> snippet to bring the site into compliance. Issues are grouped by unique rule — if multiple pages share the same violation, one fix addresses all of them.</p>';
+    entries.forEach(function(e,i){
+      const lvl=(e.sc&&WCAG_22_REQUIRED.A.indexOf(e.sc)>-1)?'A':(e.sc&&WCAG_22_REQUIRED.AA.indexOf(e.sc)>-1)?'AA':'AAA';
+      html+='<div class="entry">';
+      html+='<h2><span class="sc-badge level-'+lvl+'">SC '+(e.sc||'—')+' · Level '+lvl+'</span>'+escHtml(e.wcagTitle||'')+'</h2>';
+      if(e.impact)html+='<p class="impact">Impact: '+escHtml(e.impact)+'</p>';
+      if(e.rootCause)html+='<p><strong>Root cause:</strong> '+escHtml(e.rootCause)+'</p>';
+      if(e.beforeCode){html+='<div class="label">Before (violating pattern)</div><pre class="before">'+escHtml(e.beforeCode)+'</pre>';}
+      if(e.afterCode){html+='<div class="label">After (fix)</div><pre class="after">'+escHtml(e.afterCode)+'</pre>';}
+      if(e.explanation)html+='<div class="explanation">'+escHtml(e.explanation)+'</div>';
+      if(e.understandingUrl)html+='<p style="margin-top:12px"><a href="'+escHtml(e.understandingUrl)+'" target="_blank">Read W3C Understanding doc &rarr;</a></p>';
+      html+='</div>';
+    });
+    html+='<hr><p style="color:#64748b;font-size:11px">Generated by QA Nexus Dashboard. Source: <a href="https://www.w3.org/TR/WCAG22/">W3C WCAG 2.2</a>.</p></body></html>';
+    // Download + open in new tab
+    const blob=new Blob([html],{type:'text/html'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');a.href=url;a.download='a11y-remediation-'+Date.now()+'.html';a.click();
+    window.open(url,'_blank');
+    log('Remediation report generated: '+entries.length+' fix entries','ok');
+    showToast('Remediation report downloaded & opened.','success');
+  }catch(e){
+    log('Remediation report failed: '+e.message,'err');
+    showToast('Remediation generation failed: '+e.message,'bad');
+  }finally{
+    isRunning=false;postRunState(false);
+  }
+}
+
+// FIX-9: Regenerate test cases targeting only the missing SCs
+async function regenerateMissingSCs(missingA,missingAA){
+  const missing=[].concat(missingA||[],missingAA||[]);
+  if(!missing.length){showToast('No missing SCs.','info');return;}
+  if(!getApiKey()){showToast('Verify your API key first.','warn');return;}
+  if(isRunning){showToast('Wait for the current run to finish.','warn');return;}
+  log('Regenerating A11Y tests for '+missing.length+' missing WCAG SC(s): '+missing.join(', '),'acc');
+  isRunning=true;postRunState(true);
+  try{
+    const scList=missing.map(function(sc){
+      const level=WCAG_22_REQUIRED.A.indexOf(sc)>-1?'A':'AA';
+      return sc+' '+(WCAG_SC_NAMES[sc]||'')+' (Level '+level+')';
+    }).join('\n  - ');
+    const pages=(S.crawledPages||[]).slice(0,8);
+    const pageList=pages.map(function(p){return formatPageForPrompt(p);}).join('\n');
+    const targetedPrompt='Generate additional A11Y test cases ONLY for these WCAG 2.2 Success Criteria that are missing from the current suite. DO NOT repeat SCs already covered. Output in pipe-delimited format "A11Y-NN | [WCAG SC X.X.X — Level A/AA] Title | Module | Steps | Expected" — one per line, no headers.\n\n'+
+      'MISSING SCs TO COVER (one test per SC, site-specific to the pages below):\n  - '+scList+'\n\n'+
+      'PAGES:\n'+pageList+'\n\n'+
+      'Output format (MANDATORY): every line must begin with "A11Y-" followed by number, then " | [WCAG SC X.X.X — Level A/AA] ". Every Expected must state the observable pass criterion. Prefix manual gates with [MANUAL].';
+    const text=await callAI(targetedPrompt);
+    const newRows=parseTC(text,'A11Y');
+    if(newRows&&newRows.length){
+      // Renumber to not collide with existing A11Y IDs
+      const existingNums=allTCRows.filter(function(r){return (r.id||'').indexOf('A11Y-')===0;}).map(function(r){return parseInt((r.id||'').replace('A11Y-',''),10)||0;});
+      let nextNum=(existingNums.length?Math.max.apply(null,existingNums):0)+1;
+      newRows.forEach(function(r){r.id='A11Y-'+String(nextNum++).padStart(2,'0');});
+      allTCRows=allTCRows.concat(newRows);
+      S.total=allTCRows.length;
+      renderTCTable(allTCRows);
+      updTopbar();
+      saveS();
+      log('Regenerated '+newRows.length+' A11Y test case(s) for missing SCs','ok');
+      showToast('Added '+newRows.length+' A11Y test(s) for missing SCs.','success');
+      // Re-run validator and refresh banner
+      const cov=validateA11YCoverage();
+      if(cov)showA11YCoverageBanner(cov);
+    }else{
+      showToast('AI returned no usable targeted tests — try again or use a stronger model.','warn');
+    }
+  }catch(e){
+    log('Targeted regenerate failed: '+e.message,'err');
+    showToast('Regenerate failed: '+e.message,'bad');
+  }finally{
+    isRunning=false;postRunState(false);
+  }
 }
 
 // ── AUTOMATION SCRIPT GENERATION ─────────────────────────
@@ -2774,7 +3259,69 @@ async function generateAutomationScript(){
   setDot('run','Generating Scripts');
 
   const tcSummary=allTCRows.map(r=>r.id+': '+r.name).join('\n');
-  const prompt='Generate a complete '+tool.label+' automation project using Page Object Model pattern for testing this website.\n\nURL: '+S.url+'\nSite Type: '+(SITE_DESC[S.stype]||S.stype)+'\n\nTest Cases ('+allTCRows.length+' total):\n'+tcSummary.slice(0,4000)+'\n\nOutput each file with this exact separator format:\n===FILE: relative/path/filename===\n<file content>\n===END FILE===\n\nRequired structure:\n- package.json (or equivalent config)\n- playwright.config or equivalent\n- pages/ directory with BasePage and page objects for each feature\n- tests/ directory with test files organized by category\n- helpers/ or utils/ directory with common utilities\n\nMake the code complete, runnable, and well-commented. Use real selectors based on common web patterns.';
+  // If Accessibility was tested, require axe-core + keyboard/focus helpers
+  // in the generated automation. This converts many "manual" WCAG gates
+  // into automated assertions.
+  const a11yTested=Array.isArray(S.cats)&&S.cats.indexOf('A11Y')>-1;
+  const a11yBlock=a11yTested?('\n\nACCESSIBILITY AUTOMATION — ENTERPRISE-GRADE COVERAGE (MANDATORY because A11Y category was selected):\n'+
+    'Target ~75% automated WCAG 2.2 coverage via a 10-layer pipeline. Every layer maps to specific WCAG SCs; every helper must log the SC number it is testing.\n\n'+
+    'PACKAGE.JSON DEPENDENCIES (install all):\n'+
+    '- @axe-core/playwright (or axe-core/cypress) — core rule engine\n'+
+    '- pa11y + pa11y-reporter-json — second rule engine for ensemble\n'+
+    '- lighthouse (node API) — third engine, accessibility category only\n'+
+    '- @anthropic-ai/sdk OR openai — for LLM-as-judge checks (reads env var AI_API_KEY)\n'+
+    '- pixelmatch + pngjs — for focus indicator visual diff\n\n'+
+    'HELPERS TO GENERATE (helpers/ directory):\n\n'+
+    'helpers/accessibilityHelper.js — LAYER 1: axe-core + LAYER 7: multi-scanner ensemble.\n'+
+    '  export runAxeAudit(page,{tags:[\'wcag22a\',\'wcag22aa\',\'wcag22aaa\',\'best-practice\']}) — fails on any Critical/Serious; logs rule ID + SC mapping + node selector. Covers SC 1.4.3 contrast, SC 2.5.3 label-in-name, SC 4.1.2 name-role-value, SC 4.1.3 status messages, SC 2.5.8 target size (via target-size rule).\n'+
+    '  export runPa11yAudit(url) — runs Pa11y with WCAG2AA standard, returns issues list. Catches some rules axe misses (iframe titles, longdesc, etc.).\n'+
+    '  export runLighthouseA11y(url) — runs Lighthouse a11y category via node API, returns score + audit details. Independent confirmation of rule violations.\n'+
+    '  export runEnsembleScan(page,url) — runs all three, deduplicates by selector+rule, returns unified report. This is the function tests should call.\n\n'+
+    'helpers/keyboardHelper.js — LAYER (keyboard + focus):\n'+
+    '  export tabThroughPage(page) — walks entire tab order, records [index, accessible name, role, visible-on-screen, focus-ring-contrast]. Covers SC 2.1.1, 2.4.3, 2.4.7.\n'+
+    '  export assertNoKeyboardTrap(page) — after Tab wrap, must return to first element without dead-end (SC 2.1.2).\n'+
+    '  export assertFocusNotObscured(page,locator) — for each focused element, compute getBoundingClientRect + test intersection with position:fixed/sticky overlays. Fail if 100% hidden. Covers SC 2.4.11.\n'+
+    '  export assertTargetSize(page,locator,minPx=24) — reads rect; if < 24×24, checks 24px-circle spacing exception vs siblings. Covers SC 2.5.8.\n'+
+    '  export assertDragHasAlternative(page,draggableLocator) — checks for parallel click/button control near every draggable. Covers SC 2.5.7.\n\n'+
+    'helpers/focusVisualHelper.js — LAYER 9: pixel-level focus indicator check (covers SC 2.4.13 AAA where axe cannot):\n'+
+    '  export assertFocusIndicator(page,locator) — screenshots element unfocused, then .focus(), screenshots focused. Runs pixelmatch diff. Fails if <2 CSS px perimeter changed OR diff contrast <3:1. Computes luminance of changed pixels vs adjacent to verify contrast threshold.\n'+
+    '  export assertContrastOverComplexBackground(page,textLocator) — for text over gradients/images/video, samples 20 pixels along text path, computes contrast against the foreground text color using WCAG luminance formula. Covers SC 1.4.3 where axe skips complex backgrounds.\n\n'+
+    'helpers/ariaHelper.js — LAYER (ARIA structural):\n'+
+    '  export getAccessibleName(page,locator) — computes name per ARIA 1.2 precedence: aria-labelledby → aria-label → native label/alt → text content (if name-from-content role) → title (last resort). Returns {name, source}. Test must assert source is NOT "title" alone.\n'+
+    '  export assertRequiredOwnedChildren(page,rootLocator) — verifies composite roles have required children: menu→menuitem, listbox→option, tablist→tab, radiogroup→radio, tree→treeitem, grid→row. Covers WAI-ARIA 1.2 ownership rules.\n'+
+    '  export assertLiveRegionAnnounced(page,triggerLocator,expectedText) — triggers action, waits for role=status/alert/log content to change, verifies aria-live politeness matches (status=polite, alert=assertive). Covers SC 4.1.3.\n'+
+    '  export assertAriaHiddenSafety(page) — scans DOM for aria-hidden="true" ancestors that contain focusable children (still get Tab focus — bug). Covers common aria-hidden pitfalls.\n\n'+
+    'helpers/dynamicStateHelper.js — LAYER 8: axe scan after every UI state change (covers issues only visible post-interaction):\n'+
+    '  export scanAllModals(page) — for every [data-modal], [role=dialog], button[aria-haspopup=dialog]: open, runAxeAudit, close, record violations per modal.\n'+
+    '  export scanAllMenus(page) — for every button[aria-haspopup=menu]: open, runAxeAudit inside menu, close.\n'+
+    '  export scanAllErrorStates(page) — for every form: submit empty, runAxeAudit to catch error-message a11y issues (SC 3.3.1, 3.3.3).\n'+
+    '  export scanAllAccordions(page) — expand each [aria-expanded=false] disclosure trigger, scan expanded content.\n\n'+
+    'helpers/llmVisionHelper.js — LAYER 1: alt text + LAYER 10: contrast sanity via LLM vision:\n'+
+    '  export judgeAltText(page,imgLocator) — screenshots the image, reads its alt attribute, sends both to vision model with prompt "Does this alt text accurately describe the image? Return JSON {pass: bool, reason: string}". Covers SC 1.1.1 quality (not just presence).\n'+
+    '  export judgeFocusContrast(focusedScreenshot,unfocusedScreenshot) — LLM confirms the visual difference meets SC 2.4.13.\n\n'+
+    'helpers/llmContentHelper.js — LAYERS 2, 3, 4, 6: LLM-as-judge for things static analysis cannot check:\n'+
+    '  export judgeLinkPurpose(page,linkLocator) — sends link text + surrounding sentence to LLM: "Is the purpose of this link clear from the text alone or immediate context?". Covers SC 2.4.4 (Level A) beyond axe.\n'+
+    '  export judgeHeadingQuality(page,headingLocator) — sends heading + section content to LLM: "Does this heading meaningfully describe the content below?". Covers SC 2.4.6.\n'+
+    '  export judgeReadingLevel(page) — extracts page text, runs Flesch-Kincaid locally, sends excerpts to LLM for jargon/double-negative/complex-sentence detection. Returns reading-level score + COGA-style flags. Covers SC 3.1.5 AAA + COGA Objective 3.\n'+
+    '  export judgeSemanticHTML(page) — sends rendered HTML structure + visible layout to LLM: "Are any div/span elements being used where semantic elements (button, nav, main, header, footer) would be correct?". Covers SC 1.3.1 semantic intent.\n'+
+    '  export judgeCognitiveLoad(page) — full-page text + layout description to LLM, checks for COGA Objectives: consistent layout, primary task visible without scroll, no auto-advance, icon-only controls, plain language. Returns list of COGA flags.\n\n'+
+    'TEST FILE STRUCTURE (tests/08-accessibility/ directory, one file per WCAG guideline group):\n'+
+    '  tests/08-accessibility/1-perceivable.test.js — SCs 1.1.1 (runAxeAudit + judgeAltText for EVERY image), 1.3.1 (judgeSemanticHTML), 1.3.5 (autocomplete token check), 1.4.3/1.4.11 (runAxeAudit + assertContrastOverComplexBackground), 1.4.10 (reflow at 320px viewport), 1.4.12 (text-spacing CSS injection test), 1.4.13 (hover/focus content persistence).\n'+
+    '  tests/08-accessibility/2-operable.test.js — SCs 2.1.1/2.1.2 (tabThroughPage + assertNoKeyboardTrap), 2.4.1 (skip link check), 2.4.3 (focus order dom-vs-visual), 2.4.4 (judgeLinkPurpose on every link), 2.4.6 (judgeHeadingQuality on every heading), 2.4.7/2.4.13 (assertFocusIndicator pixel check), 2.4.11 (assertFocusNotObscured with sticky-header simulated), 2.5.3 (label-in-name via getAccessibleName), 2.5.7 (assertDragHasAlternative), 2.5.8 (assertTargetSize).\n'+
+    '  tests/08-accessibility/3-understandable.test.js — SCs 3.1.1 (html lang), 3.1.2 (lang of parts), 3.1.5 (judgeReadingLevel), 3.2.3/3.2.4 (consistent nav/ident across pages), 3.2.6 (help mechanism position across pages), 3.3.1/3.3.2 (error id + labels via runAxeAudit), 3.3.3 (error suggestion), 3.3.7 (multi-step form redundant-entry detector), 3.3.8 (paste not blocked on password/OTP fields, autocomplete tokens present).\n'+
+    '  tests/08-accessibility/4-robust.test.js — SCs 4.1.2 (runAxeAudit name-role-value + assertRequiredOwnedChildren on every composite widget) + 4.1.3 (assertLiveRegionAnnounced for every form submit / toast / async update).\n'+
+    '  tests/08-accessibility/5-dynamic-states.test.js — scanAllModals, scanAllMenus, scanAllErrorStates, scanAllAccordions (LAYER 8).\n'+
+    '  tests/08-accessibility/6-cognitive.test.js — judgeCognitiveLoad per page (LAYER 4, COGA).\n'+
+    '  tests/08-accessibility/7-manual-checklist.test.js — [MANUAL] gates that print a checklist to stdout and pass/fail based on a JSON file testers fill in (1.2.x media quality, 3.3.4 legal/financial review screens, tasks requiring real screen reader announcement verification).\n\n'+
+    'PLAYWRIGHT CONFIG (playwright.config.js) — add three projects:\n'+
+    '  { name: "default" } — regular run\n'+
+    '  { name: "keyboard-only", use: { hasTouch: false }, testMatch: "**/2-operable.test.js" } — pointer simulated disabled\n'+
+    '  { name: "reflow-320", use: { viewport: { width: 320, height: 720 } }, testMatch: "**/1-perceivable.test.js" } — covers SC 1.4.10\n\n'+
+    'NPM SCRIPTS:\n'+
+    '  "test:a11y": "playwright test tests/08-accessibility --reporter=html,json"\n'+
+    '  "test:a11y:ci": "playwright test tests/08-accessibility --reporter=json > reports/a11y.json"\n\n'+
+    'OUTPUT CONTRACT: every test title starts with "[WCAG SC X.X.X — Level A/AA/AAA]". Every test failure logs: SC number, rule/helper that failed, node selector, expected vs actual, screenshot, and (for LLM-judged cases) the LLM reasoning text. Generate the final a11y.html report with violations grouped by WCAG principle → guideline → SC, each with impact (Critical/Serious/Moderate/Minor) and remediation link to Understanding WCAG 2.2 doc.'):'';
+  const prompt='Generate a complete '+tool.label+' automation project using Page Object Model pattern for testing this website.\n\nURL: '+S.url+'\nSite Type: '+(SITE_DESC[S.stype]||S.stype)+'\n\nTest Cases ('+allTCRows.length+' total):\n'+tcSummary.slice(0,4000)+'\n\nOutput each file with this exact separator format:\n===FILE: relative/path/filename===\n<file content>\n===END FILE===\n\nRequired structure:\n- package.json (or equivalent config)\n- playwright.config or equivalent\n- pages/ directory with BasePage and page objects for each feature\n- tests/ directory with test files organized by category\n- helpers/ or utils/ directory with common utilities\n\nMake the code complete, runnable, and well-commented. Use real selectors based on common web patterns.'+a11yBlock;
 
   try{
     statusText.textContent='AI is writing automation code... This may take a minute.';
@@ -3187,9 +3734,9 @@ async function renderCanonicalReport(results){
   const testedCats=S.cats||[];
 
   // Map our cat IDs to canonical TC-prefix and tab names
-  const catToPrefix={FN:'TC-FN',UIUX:'TC-UI',SEC:'TC-SEC',API:'TC-API',PERF:'TC-PERF',SEO:'TC-FN',CONT:'TC-FN'};
-  const catToType={FN:'Functional',UIUX:'UI/UX',SEC:'Security',API:'API',PERF:'Performance',SEO:'SEO',CONT:'Content'};
-  const catToBugType={FN:'fn',UIUX:'ui',SEC:'sec',API:'api',PERF:'perf',SEO:'fn',CONT:'fn'};
+  const catToPrefix={FN:'TC-FN',UIUX:'TC-UI',SEC:'TC-SEC',API:'TC-API',PERF:'TC-PERF',SEO:'TC-FN',CONT:'TC-FN',A11Y:'TC-A11Y'};
+  const catToType={FN:'Functional',UIUX:'UI/UX',SEC:'Security',API:'API',PERF:'Performance',SEO:'SEO',CONT:'Content',A11Y:'Accessibility'};
+  const catToBugType={FN:'fn',UIUX:'ui',SEC:'sec',API:'api',PERF:'perf',SEO:'fn',CONT:'fn',A11Y:'ui'};
 
   // Build test cases with proper TC- prefixed IDs for the canonical template
   const mappedTCs=[];
@@ -3252,6 +3799,7 @@ async function renderCanonicalReport(results){
     PERF:{icon:'\\u26A1',title:'Performance',scoreMax:20,items:['Optimize load times','Enable lazy loading','Compress images']},
     SEO: {icon:'\\uD83D\\uDD0D',title:'SEO',scoreMax:15,items:['Add structured data','Review meta descriptions']},
     CONT:{icon:'\\uD83D\\uDCDD',title:'Content Quality',scoreMax:15,items:['Fix spelling/grammar issues','Review placeholder content']},
+    A11Y:{icon:'\\u267F',title:'Accessibility',scoreMax:20,items:['Fix WCAG 2.1 AA violations','Improve keyboard navigation','Add missing alt text and ARIA labels']},
     FN_EDGE:{icon:'\\u26A0',title:'Edge Case Coverage (embedded)',scoreMax:15,items:['Edge cases covered within each category','Boundary/extreme/unusual inputs tested per page']}
   };
   const improvements=[];
@@ -3329,6 +3877,135 @@ async function renderCanonicalReport(results){
   const iframe=document.getElementById('rptIframe');
   const html=CANONICAL_TMPL_HEAD+'<script>\nwindow.QA='+JSON.stringify(qaData)+';\n<\/script>\n'+CANONICAL_TMPL_BODY;
   iframe.srcdoc=html;
+
+  // FIX-2: Render A11Y panel (WCAG 2.2 grouped by POUR → guideline → SC)
+  try{renderA11YReportPanel(mappedTCs);}catch(e){console.warn('[qa-agent] A11Y panel render failed',e);}
+}
+
+// FIX-2: Build an A11Y-specific report panel grouped by WCAG principle → guideline → SC.
+// Runs only when A11Y was a tested category. Renders INSIDE the report pane
+// (outside the iframe) so it's fully interactive and doesn't need template changes.
+function renderA11YReportPanel(testCases){
+  const panel=document.getElementById('a11yReportPanel');
+  if(!panel)return;
+  if(!Array.isArray(S.cats)||S.cats.indexOf('A11Y')<0){panel.classList.add('hidden');panel.innerHTML='';return;}
+  const a11yTCs=(testCases||[]).filter(function(t){return (t.id||'').indexOf('A11Y-')===0;});
+  if(!a11yTCs.length){panel.classList.add('hidden');return;}
+  const cov=validateA11YCoverage();
+
+  // POUR principle names
+  const PRINCIPLES={'1':'Perceivable','2':'Operable','3':'Understandable','4':'Robust'};
+  const GUIDELINES={
+    '1.1':'Text Alternatives','1.2':'Time-based Media','1.3':'Adaptable','1.4':'Distinguishable',
+    '2.1':'Keyboard Accessible','2.2':'Enough Time','2.3':'Seizures','2.4':'Navigable','2.5':'Input Modalities',
+    '3.1':'Readable','3.2':'Predictable','3.3':'Input Assistance',
+    '4.1':'Compatible',
+  };
+  // Group tests by SC
+  const bySC={};
+  a11yTCs.forEach(function(t){
+    const sc=extractWCAGSC(t.scenario||t.name||'');
+    if(!sc)return;
+    (bySC[sc]=bySC[sc]||[]).push(t);
+  });
+
+  // Aggregate pass/fail per SC → guideline → principle
+  function scStatus(tcs){
+    let p=0,f=0,b=0,n=0;
+    tcs.forEach(function(t){
+      const s=(t.status||'').toLowerCase();
+      if(s==='pass')p++;
+      else if(s==='fail')f++;
+      else if(s==='block'||s==='blocked')b++;
+      else n++;
+    });
+    return {pass:p,fail:f,blocked:b,notrun:n,total:tcs.length,
+      verdict:f>0?'fail':(p>0?'pass':'notrun')};
+  }
+
+  // Build tree: principle → guideline → [sc, scName, status, tcs]
+  const tree={};
+  Object.keys(bySC).sort().forEach(function(sc){
+    const parts=sc.split('.');
+    const prin=parts[0];
+    const guide=parts[0]+'.'+parts[1];
+    if(!tree[prin])tree[prin]={guides:{},pass:0,fail:0,total:0};
+    if(!tree[prin].guides[guide])tree[prin].guides[guide]={scs:[],pass:0,fail:0,total:0};
+    const st=scStatus(bySC[sc]);
+    tree[prin].guides[guide].scs.push({sc,name:WCAG_SC_NAMES[sc]||'',level:WCAG_22_REQUIRED.A.indexOf(sc)>-1?'A':(WCAG_22_REQUIRED.AA.indexOf(sc)>-1?'AA':'AAA'),status:st,tcs:bySC[sc]});
+    tree[prin].guides[guide].pass+=st.pass;
+    tree[prin].guides[guide].fail+=st.fail;
+    tree[prin].guides[guide].total+=st.total;
+    tree[prin].pass+=st.pass;
+    tree[prin].fail+=st.fail;
+    tree[prin].total+=st.total;
+  });
+
+  const totalTests=a11yTCs.length;
+  const totalPass=a11yTCs.filter(function(t){return (t.status||'').toLowerCase()==='pass';}).length;
+  const totalFail=a11yTCs.filter(function(t){return (t.status||'').toLowerCase()==='fail';}).length;
+  const complianceScore=totalTests>0?Math.round((totalPass/totalTests)*100):0;
+  const scoreColor=complianceScore>=95?'var(--success)':(complianceScore>=80?'var(--warn)':'var(--danger)');
+
+  let html='<div style="background:rgba(15,23,42,.6);border:1px solid var(--border);border-radius:6px;padding:14px 16px;margin:10px 0;font-family:var(--mono);font-size:12px;color:var(--text)">';
+  html+='<div style="display:flex;align-items:center;gap:16px;margin-bottom:12px;flex-wrap:wrap">';
+  html+='<div style="font-size:15px;font-weight:700;color:var(--accent)">&#9863; WCAG 2.2 Compliance</div>';
+  html+='<div style="font-size:22px;font-weight:800;color:'+scoreColor+'">'+complianceScore+'%</div>';
+  html+='<div style="font-size:11px;color:var(--muted)">'+totalPass+' pass · '+totalFail+' fail · '+totalTests+' tests</div>';
+  if(cov){
+    html+='<div style="font-size:11px;color:var(--muted)">· Coverage '+cov.coveragePct+'% ('+cov.totalCovered+'/'+cov.totalRequired+' A+AA SCs)</div>';
+  }
+  html+='</div>';
+
+  // Coverage gaps warning
+  if(cov&&(cov.missingA.length||cov.missingAA.length)){
+    html+='<div style="background:rgba(234,88,12,.08);border-left:3px solid var(--warn);padding:8px 12px;margin-bottom:12px;font-size:11px">';
+    html+='<strong style="color:var(--warn)">Coverage gaps:</strong> ';
+    if(cov.missingA.length)html+=cov.missingA.length+' Level A SCs, ';
+    if(cov.missingAA.length)html+=cov.missingAA.length+' Level AA SCs not tested. ';
+    html+='<button class="exp-btn" onclick="regenerateMissingSCs('+JSON.stringify(cov.missingA).replace(/"/g,'&quot;')+','+JSON.stringify(cov.missingAA).replace(/"/g,'&quot;')+')" style="margin-left:8px">&#8635; Generate tests for gaps</button>';
+    html+='</div>';
+  }
+
+  // Tree
+  html+='<div style="display:grid;gap:12px">';
+  Object.keys(tree).sort().forEach(function(prin){
+    const pData=tree[prin];
+    const pVerdict=pData.fail>0?'fail':(pData.pass>0?'pass':'notrun');
+    const pColor=pVerdict==='fail'?'var(--danger)':(pVerdict==='pass'?'var(--success)':'var(--muted)');
+    html+='<details style="border:1px solid var(--border);border-radius:4px;padding:0" open>';
+    html+='<summary style="padding:8px 12px;cursor:pointer;background:rgba(30,58,95,.12);list-style:none;display:flex;justify-content:space-between;align-items:center">';
+    html+='<span style="font-weight:700;color:'+pColor+'">'+prin+'. '+PRINCIPLES[prin]+'</span>';
+    html+='<span style="font-size:11px;color:var(--muted)">'+pData.pass+'P · '+pData.fail+'F · '+pData.total+' tests</span>';
+    html+='</summary>';
+    html+='<div style="padding:8px 12px">';
+    Object.keys(pData.guides).sort().forEach(function(guide){
+      const gData=pData.guides[guide];
+      html+='<div style="margin-bottom:10px">';
+      html+='<div style="font-weight:600;margin:6px 0 4px;color:var(--text)">'+guide+' '+(GUIDELINES[guide]||'')+'</div>';
+      gData.scs.forEach(function(s){
+        const sColor=s.status.verdict==='fail'?'var(--danger)':(s.status.verdict==='pass'?'var(--success)':'var(--muted)');
+        html+='<div style="padding:6px 10px;margin:4px 0;background:rgba(0,0,0,.2);border-left:2px solid '+sColor+';border-radius:2px">';
+        html+='<div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">';
+        html+='<span><strong style="color:'+sColor+'">SC '+s.sc+'</strong> <span style="color:var(--text)">'+s.name+'</span> <span style="color:var(--muted);font-size:10px">Level '+s.level+'</span></span>';
+        html+='<span style="font-size:11px;color:var(--muted)">'+s.status.pass+'P · '+s.status.fail+'F · '+s.status.total+' test(s)</span>';
+        html+='</div>';
+        // Show failed tests inline
+        if(s.status.fail>0){
+          const failedTCs=s.tcs.filter(function(t){return (t.status||'').toLowerCase()==='fail';});
+          html+='<div style="margin-top:4px;font-size:11px;color:var(--danger)">Failures: '+failedTCs.map(function(t){return t.id;}).join(', ')+'</div>';
+        }
+        html+='</div>';
+      });
+      html+='</div>';
+    });
+    html+='</div></details>';
+  });
+  html+='</div>';
+  html+='<div style="margin-top:10px;font-size:10px;color:var(--muted)">Source: <a href="https://www.w3.org/TR/WCAG22/" target="_blank" style="color:var(--accent)">W3C WCAG 2.2 Recommendation</a></div>';
+  html+='</div>';
+  panel.innerHTML=html;
+  panel.classList.remove('hidden');
 }
 
 function downloadReport(){
@@ -3622,6 +4299,10 @@ function renderSecurity(){var S2=D.security;document.getElementById('sec-sev-car
   _w.runLogFix = runLogFix;
   _w.showAutoModal = showAutoModal;
   _w.showRunModal = showRunModal;
+  _w.regenerateMissingSCs = regenerateMissingSCs;
+  _w.validateA11YCoverage = validateA11YCoverage;
+  _w.runInlineAxeAndRender = runInlineAxeAndRender;
+  _w.generateRemediationReport = generateRemediationReport;
   _w.siteTypeChange = siteTypeChange;
   _w.projectTypeChange = projectTypeChange;
   _w.cancelRestart = cancelRestart;
@@ -3673,8 +4354,9 @@ function renderSecurity(){var S2=D.security;document.getElementById('sec-sev-car
             try{renderPipeList();}catch(e){}
           }
           if(st.projectId)S.projectId=st.projectId;
-          if(Array.isArray(st.crawledPages))S.crawledPages=st.crawledPages;
-          if(st.crawledDomain)S.crawledDomain=st.crawledDomain;
+          // Do NOT restore crawledPages on refresh — page scan must be re-run
+          // so the Pages tab resets to 0 and post-scan sections stay hidden
+          // until the user triggers a fresh scan.
           if(st.apiProvider)S.apiProvider=st.apiProvider;
         }catch(e){console.warn('[qa-agent] state apply failed',e);}
       }
@@ -3699,22 +4381,9 @@ function renderSecurity(){var S2=D.security;document.getElementById('sec-sev-car
       if(Array.isArray(payload.projects)){
         populateProjects(payload.projects);
       }
-      // If state has crawled pages from a previous session, restore pages tab & show post-scan sections
-      if(S.crawledPages&&S.crawledPages.length){
-        scannedPages=S.crawledPages;
-        try{
-          document.getElementById('es-pages').style.display='none';
-          document.getElementById('c-pages').classList.remove('hidden');
-          document.getElementById('cnt-pages').textContent=scannedPages.length;
-          renderPagesTable(scannedPages);
-          updatePagesSummary();
-          if(S.crawledDomain){
-            var domEl=document.getElementById('pagesDomain');
-            if(domEl){domEl.textContent='Domain: '+S.crawledDomain;domEl.title=S.crawledDomain;domEl.href=S.crawledDomain;}
-          }
-          showPostScanSections();
-        }catch(e){}
-      }
+      // Pages tab & post-scan sections are NOT restored on refresh — the user
+      // must re-run the scan each session. This keeps the Pages count at 0 and
+      // keeps Upload/Notes/Site Type/Test Categories hidden until scan completes.
       try{
         var c=document.getElementById('cnt-prev');
         if(c) c.textContent=getRuns().length;
@@ -3755,6 +4424,59 @@ function renderSecurity(){var S2=D.security;document.getElementById('sec-sev-car
       try{_post('running-state',{running:!!isRunning,activeRunId:(S&&S.activeRunId)||null});}catch(e){}
     }
   });
+
+  // ── UNSAVED / BUSY RELOAD GUARD ─────────────────────────
+  // Must live inside initQAAgent() so it can close over _scanningPages,
+  // isRunning, scannedPages, S, and uploadedFiles (all locals here).
+  function _computeBusy(){
+    try{
+      if(_scanningPages) return true;
+      if(isRunning) return true;
+      if(S && S.completed && Object.keys(S.completed).length > 0 && !S.executionResults) return true;
+    }catch(e){}
+    return false;
+  }
+  function _computeDirty(){
+    try{
+      if(_computeBusy()) return true;
+      // Alert trigger starts from URL entry onwards. Project / site type /
+      // categories / notes alone don't count as dirty — the URL is the
+      // commitment point after which reload would lose meaningful progress.
+      var urlEl = document.getElementById('url');
+      var hasUrl = !!(urlEl && urlEl.value && urlEl.value.trim());
+      var hasScanData = !!(scannedPages && scannedPages.length);
+      var hasFiles = !!(typeof uploadedFiles !== 'undefined' && uploadedFiles && uploadedFiles.length);
+      return !!(hasUrl || hasScanData || hasFiles);
+    }catch(e){ return false; }
+  }
+  try{
+    window.addEventListener('beforeunload', function(e){
+      if(_computeBusy()){
+        var msg1 = 'A QA process is currently running. If you reload, the run will be cancelled and all unsaved data will be deleted.';
+        e.preventDefault();
+        e.returnValue = msg1;
+        return msg1;
+      }
+      if(_computeDirty()){
+        var msg2 = 'You have unsaved configuration. If you reload, all entered data will be lost.';
+        e.preventDefault();
+        e.returnValue = msg2;
+        return msg2;
+      }
+    });
+  }catch(e){}
+  try{
+    var _lastDirty = null, _lastBusy = null;
+    setInterval(function(){
+      var d = _computeDirty();
+      var b = _computeBusy();
+      if(d !== _lastDirty || b !== _lastBusy){
+        _lastDirty = d; _lastBusy = b;
+        console.log('[qa-agent] dirty =', d, 'busy =', b);
+        _post('dirty-state', { dirty: d, busy: b });
+      }
+    }, 500);
+  }catch(e){}
 }
 
 function _bootQAAgent(){

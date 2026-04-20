@@ -151,7 +151,7 @@ function FileViewerModal({ file, onClose }) {
 }
 
 // ── TABS ───────────────────────────────────────────────────────────────────────
-const SUB_TABS = ['Overview', 'Details', 'Bugs', 'Test Cases', 'Execution', 'API Testing', 'Performance', '404 Pages', 'Broken Links'];
+const SUB_TABS = ['Overview', 'Details', 'Bugs', 'Test Cases', 'Execution', 'API Testing', 'Performance', 'Accessibility Testing', '404 Pages', 'Broken Links'];
 
 const HEALTH_COLOR = { Excellent: '#22c55e', Good: '#38BDF8', Average: '#FFB547', Poor: '#FF4D4D' };
 const HEALTH_IC = { Excellent: '✓', Good: '◎', Average: '◎', Poor: '✕' };
@@ -1352,6 +1352,28 @@ function PerformanceTab() {
   );
 }
 
+// ── AccessibilityTab ───────────────────────────────────────────────────────────
+function AccessibilityTab() {
+  return (
+    <div style={{ marginTop: 0 }}>
+      <Cd>
+        <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--tx)', marginBottom: 6, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span>♿</span> Accessibility Testing (WCAG 2.1 AA)
+        </div>
+        <StatRow label="Tests Run" value={24} />
+        <StatRow label="axe-core Score" value="92 / 100" valueColor="var(--lime)" bold />
+        <BarRow label="WCAG 2.1 AA Compliance" value={92} color="var(--lime)" suffix="%" />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 18, paddingTop: 18 }}>
+          <StatPair label="Passed" value={22} color="#22c55e" />
+          <StatPair label="Critical" value={0} color="var(--rd)" />
+          <StatPair label="Serious" value={1} color="var(--am)" />
+          <StatPair label="Moderate" value={1} color="var(--cy)" />
+        </div>
+      </Cd>
+    </div>
+  );
+}
+
 // ── Pages404Tab ────────────────────────────────────────────────────────────────
 function Pages404Tab() {
   const [selected, setSelected] = useState(null);
@@ -1804,6 +1826,7 @@ function QAAgentResultSection({ project, toast, tab }) {
     Execution: <QAAgentExecutionTab runs={activeRuns} data={data} />,
     'API Testing': <QAAgentCategoryTab data={data} category="API" categoryLabel="API Testing" icon="🔌" />,
     Performance: <QAAgentCategoryTab data={data} category="PERF" categoryLabel="Performance" icon="⚡" />,
+    'Accessibility Testing': <QAAgentCategoryTab data={data} category="A11Y" categoryLabel="Accessibility Testing" icon="♿" />,
     '404 Pages': <QAAgent404Tab data={data} />,
     'Broken Links': <QAAgentBrokenLinksTab data={data} />,
   };
@@ -1887,6 +1910,7 @@ export default function ProjectInnerPage({ project: initialProject, onBack, toas
     Execution: tab === 'Execution' ? <ExecutionTab project={project} toast={toast} /> : null,
     'API Testing': tab === 'API Testing' ? <APITestingTab project={project} toast={toast} /> : null,
     Performance: tab === 'Performance' ? <PerformanceTab /> : null,
+    'Accessibility Testing': tab === 'Accessibility Testing' ? <AccessibilityTab /> : null,
     '404 Pages': tab === '404 Pages' ? <Pages404Tab /> : null,
     'Broken Links': tab === 'Broken Links' ? <BrokenLinksTab /> : null,
   };

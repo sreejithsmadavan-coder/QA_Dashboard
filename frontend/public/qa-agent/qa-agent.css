@@ -263,6 +263,7 @@
 .qa-agent .cat-tag.PERF{background:#1f1012;color:#fca5a5;border-color:#991b1b}
 .qa-agent .cat-tag.SEO{background:#0c1a2e;color:#7dd3fc;border-color:#1e40af}
 .qa-agent .cat-tag.CONT{background:#1a2235;color:#94a3b8;border-color:#334155}
+.qa-agent .cat-tag.A11Y{background:#2a0f1f;color:#f9a8d4;border-color:#9d174d}
 .qa-agent .cat-tag.EDGE{background:#17100040;color:var(--warn);border-color:#854d0e}
 .qa-agent .tbl-empty{text-align:center;color:var(--muted);padding:30px;font-size:12px}
 .qa-agent .tc-act-btn{font-family:var(--mono);font-size:9px;padding:2px 6px;border-radius:3px;border:1px solid var(--border);background:var(--surface2);color:var(--muted);cursor:pointer;transition:all .15s;margin-right:3px}

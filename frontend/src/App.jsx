@@ -315,7 +315,9 @@ function AppContent() {
       </div>
 
       <Suspense fallback={null}>
-        <ChatBotIcon onNavigate={(pg) => { safeSetPage(pg); setActiveProjId(null); setActiveProject(null); }} />
+        {page !== 'qa-agent' && (
+          <ChatBotIcon onNavigate={(pg) => { safeSetPage(pg); setActiveProjId(null); setActiveProject(null); }} />
+        )}
         <CommandPalette
           open={cmdPaletteOpen}
           onClose={() => setCmdPaletteOpen(false)}

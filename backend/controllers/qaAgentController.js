@@ -54,6 +54,251 @@ const SITEMAP_LOC_RE = /<loc>\s*([^<\s]+)\s*<\/loc>/gi;
 
 function stripTags(s) { return String(s || '').replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim(); }
 
+// ── A11Y-rich pageAnalysis extraction ────────────────────────────────────────
+// Regex-based HTML parsing — not as robust as jsdom but zero-dep and fast
+// enough for the crawler. Extracts everything the QA Agent prompt needs to
+// generate site-specific WCAG 2.2 test cases (lang, landmarks, heading text,
+// alt text samples, form label associations, icon-only buttons, skip links,
+// ARIA attributes, autocomplete tokens).
+function buildPageAnalysis(html) {
+  if (!html || typeof html !== 'string') return null;
+  const a = {};
+
+  // 1. <html lang="..."> — SC 3.1.1
+  const langM = html.match(/<html[^>]*\blang\s*=\s*["']([^"']+)["']/i);
+  a.lang = langM ? langM[1].toLowerCase() : null;
+
+  // 2. Doctype
+  a.doctype = /<!doctype\s+html/i.test(html) ? 'html5' : null;
+
+  // 3. Meta — description, viewport, canonical
+  const metaDesc = html.match(/<meta[^>]*\bname\s*=\s*["']description["'][^>]*\bcontent\s*=\s*["']([^"']*)["']/i);
+  const metaViewport = html.match(/<meta[^>]*\bname\s*=\s*["']viewport["'][^>]*\bcontent\s*=\s*["']([^"']*)["']/i);
+  const canonical = html.match(/<link[^>]*\brel\s*=\s*["']canonical["'][^>]*\bhref\s*=\s*["']([^"']+)["']/i);
+  a.meta = {
+    description: metaDesc ? metaDesc[1].trim() : null,
+    viewport: metaViewport ? metaViewport[1].trim() : null,
+    canonical: canonical ? canonical[1].trim() : null,
+  };
+
+  // 4. Landmarks — SC 1.3.1, 2.4.1
+  a.landmarks = {
+    main: /<main\b|role\s*=\s*["']main["']/i.test(html),
+    nav: /<nav\b|role\s*=\s*["']navigation["']/i.test(html),
+    header: /<header\b|role\s*=\s*["']banner["']/i.test(html),
+    footer: /<footer\b|role\s*=\s*["']contentinfo["']/i.test(html),
+    aside: /<aside\b|role\s*=\s*["']complementary["']/i.test(html),
+    search: /role\s*=\s*["']search["']/i.test(html),
+  };
+
+  // 5. Skip link — SC 2.4.1 (first anchor with href starting with # usually)
+  const firstAnchor = html.match(/<a\b[^>]*\bhref\s*=\s*["'](#[^"']+)["'][^>]*>([\s\S]*?)<\/a>/i);
+  a.skipLink = firstAnchor ? { href: firstAnchor[1], text: stripTags(firstAnchor[2]).slice(0, 60) } : null;
+
+  // 6. Headings — SC 1.3.1, 2.4.6, 2.4.10
+  const headings = [];
+  const HEADING_RE = /<(h[1-6])\b[^>]*>([\s\S]*?)<\/\1>/gi;
+  let hm;
+  while ((hm = HEADING_RE.exec(html)) !== null && headings.length < 40) {
+    const text = stripTags(hm[2]).slice(0, 120);
+    if (text) headings.push({ tag: hm[1].toLowerCase(), text });
+  }
+  a.headings = headings;
+  a.headingCounts = headings.reduce((acc, h) => { acc[h.tag] = (acc[h.tag] || 0) + 1; return acc; }, {});
+
+  // 7. Images — SC 1.1.1. Sample first 20 with their alt text so the LLM
+  // can flag placeholder alt like "Banner" / "A featured image for this section"
+  const imgs = [];
+  const IMG_RE = /<img\b([^>]*)>/gi;
+  let im;
+  while ((im = IMG_RE.exec(html)) !== null && imgs.length < 20) {
+    const attrs = im[1];
+    const altM = attrs.match(/\balt\s*=\s*["']([^"']*)["']/i);
+    const srcM = attrs.match(/\bsrc\s*=\s*["']([^"']+)["']/i);
+    const lazy = /\bloading\s*=\s*["']lazy["']/i.test(attrs);
+    const decorative = altM && altM[1] === '';
+    imgs.push({
+      src: srcM ? srcM[1].slice(0, 120) : null,
+      alt: altM ? altM[1].slice(0, 120) : null,
+      altMissing: !altM,
+      decorative,
+      lazy,
+    });
+  }
+  const totalImgRe = html.match(/<img\b/gi);
+  const totalImg = totalImgRe ? totalImgRe.length : 0;
+  const withAlt = imgs.filter(i => !i.altMissing).length;
+  const withoutAlt = imgs.filter(i => i.altMissing).length;
+  a.images = {
+    total: totalImg,
+    withAlt, withoutAlt,
+    sample: imgs,
+    // Flag placeholder alt text patterns the LLM should catch (SC 1.1.1 quality)
+    placeholderAlts: imgs.filter(i => i.alt && /^(banner|image|photo|picture|img|a featured image|logo|graphic|icon)\s*\d*$/i.test(i.alt.trim())).map(i => i.alt),
+  };
+
+  // 8. Forms — SC 1.3.1, 1.3.5, 3.3.2, 3.3.8
+  const forms = [];
+  const FORM_RE = /<form\b([^>]*)>([\s\S]*?)<\/form>/gi;
+  let fm;
+  while ((fm = FORM_RE.exec(html)) !== null && forms.length < 10) {
+    const formAttrs = fm[1];
+    const formInner = fm[2];
+    const actionM = formAttrs.match(/\baction\s*=\s*["']([^"']*)["']/i);
+    const methodM = formAttrs.match(/\bmethod\s*=\s*["']([^"']*)["']/i);
+    const fields = [];
+    // inputs, textareas, selects
+    const FIELD_RE = /<(input|textarea|select)\b([^>]*)(?:>|\/>)/gi;
+    let fi;
+    while ((fi = FIELD_RE.exec(formInner)) !== null && fields.length < 30) {
+      const tag = fi[1].toLowerCase();
+      const attrs = fi[2];
+      const nameM = attrs.match(/\bname\s*=\s*["']([^"']+)["']/i);
+      const idM = attrs.match(/\bid\s*=\s*["']([^"']+)["']/i);
+      const typeM = attrs.match(/\btype\s*=\s*["']([^"']+)["']/i);
+      const placeholderM = attrs.match(/\bplaceholder\s*=\s*["']([^"']+)["']/i);
+      const autocompleteM = attrs.match(/\bautocomplete\s*=\s*["']([^"']+)["']/i);
+      const required = /\brequired\b/i.test(attrs);
+      const ariaLabelM = attrs.match(/\baria-label\s*=\s*["']([^"']+)["']/i);
+      const ariaLabelledbyM = attrs.match(/\baria-labelledby\s*=\s*["']([^"']+)["']/i);
+      const ariaDescribedbyM = attrs.match(/\baria-describedby\s*=\s*["']([^"']+)["']/i);
+      const ariaInvalidM = attrs.match(/\baria-invalid\s*=\s*["']([^"']+)["']/i);
+      const typeVal = typeM ? typeM[1].toLowerCase() : (tag === 'textarea' ? 'textarea' : tag === 'select' ? 'select' : 'text');
+      if (typeVal === 'hidden' || typeVal === 'submit' || typeVal === 'button') continue;
+      // Is there a <label for="id"> referencing this field?
+      let labelAssoc = null;
+      if (idM) {
+        const labelRe = new RegExp('<label[^>]*\\bfor\\s*=\\s*["\']' + idM[1].replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&') + '["\'][^>]*>([\\s\\S]*?)</label>', 'i');
+        const lm = formInner.match(labelRe);
+        if (lm) labelAssoc = stripTags(lm[1]).slice(0, 60);
+      }
+      fields.push({
+        tag, type: typeVal,
+        name: nameM ? nameM[1] : null,
+        id: idM ? idM[1] : null,
+        placeholder: placeholderM ? placeholderM[1] : null,
+        autocomplete: autocompleteM ? autocompleteM[1] : null,
+        required,
+        label: labelAssoc,                              // visible <label for>
+        ariaLabel: ariaLabelM ? ariaLabelM[1] : null,
+        ariaLabelledby: ariaLabelledbyM ? ariaLabelledbyM[1] : null,
+        ariaDescribedby: ariaDescribedbyM ? ariaDescribedbyM[1] : null,
+        ariaInvalid: ariaInvalidM ? ariaInvalidM[1] : null,
+        // Final verdict: does this field have a programmatic accessible name?
+        hasLabel: !!(labelAssoc || ariaLabelM || ariaLabelledbyM),
+      });
+    }
+    // Submit buttons
+    const submitButtons = [];
+    const SUBMIT_RE = /<(button|input)\b([^>]*)(?:>([\s\S]*?)<\/button>|\/?>)/gi;
+    let sm;
+    while ((sm = SUBMIT_RE.exec(formInner)) !== null && submitButtons.length < 5) {
+      const attrs = sm[2];
+      const typeM = attrs.match(/\btype\s*=\s*["']([^"']+)["']/i);
+      const valueM = attrs.match(/\bvalue\s*=\s*["']([^"']+)["']/i);
+      if (typeM && /^(submit|button)$/i.test(typeM[1]) || !typeM) {
+        const text = sm[3] ? stripTags(sm[3]).slice(0, 40) : (valueM ? valueM[1].slice(0, 40) : '');
+        if (text) submitButtons.push(text);
+      }
+    }
+    forms.push({
+      action: actionM ? actionM[1].slice(0, 120) : '',
+      method: methodM ? methodM[1].toLowerCase() : 'get',
+      fields,
+      submitButtons,
+      fieldsWithoutLabel: fields.filter(f => !f.hasLabel).length,
+      fieldsWithoutAutocomplete: fields.filter(f => ['text', 'email', 'tel', 'password'].includes(f.type) && !f.autocomplete).length,
+    });
+  }
+  a.forms = forms;
+
+  // 9. Buttons — especially icon-only (no text content) which fail SC 4.1.2
+  const buttons = [];
+  const iconOnlyButtons = [];
+  const BUTTON_RE = /<button\b([^>]*)>([\s\S]*?)<\/button>/gi;
+  let bm;
+  while ((bm = BUTTON_RE.exec(html)) !== null && buttons.length < 30) {
+    const attrs = bm[1];
+    const inner = bm[2];
+    const text = stripTags(inner).slice(0, 60);
+    const ariaLabelM = attrs.match(/\baria-label\s*=\s*["']([^"']+)["']/i);
+    const ariaLabelledbyM = attrs.match(/\baria-labelledby\s*=\s*["']([^"']+)["']/i);
+    const titleM = attrs.match(/\btitle\s*=\s*["']([^"']+)["']/i);
+    const hasImg = /<img\b|<svg\b|<i\b[^>]*class/i.test(inner);
+    const hasText = text.length > 0;
+    const hasName = hasText || !!ariaLabelM || !!ariaLabelledbyM;
+    const b = {
+      text: text || null,
+      ariaLabel: ariaLabelM ? ariaLabelM[1] : null,
+      title: titleM ? titleM[1] : null,
+      iconOnly: hasImg && !hasText,
+      hasName,
+    };
+    buttons.push(b);
+    if (b.iconOnly && !b.ariaLabel && !ariaLabelledbyM) iconOnlyButtons.push(b);
+  }
+  a.buttons = buttons.filter(b => b.text).slice(0, 15).map(b => ({ text: b.text, href: null }));
+  a.iconOnlyButtonsWithoutLabel = iconOnlyButtons.length;
+
+  // 10. Links — flag generic link text (SC 2.4.4)
+  const allLinks = [];
+  const genericLinks = [];
+  const navLinks = [];
+  const footerLinks = [];
+  const LINK_RE = /<a\b([^>]*)\bhref\s*=\s*["']([^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi;
+  let lm;
+  let totalInternal = 0, totalExternal = 0;
+  while ((lm = LINK_RE.exec(html)) !== null && allLinks.length < 100) {
+    const attrs = lm[1];
+    const href = lm[2];
+    const text = stripTags(lm[3]).slice(0, 80);
+    const ariaLabelM = attrs.match(/\baria-label\s*=\s*["']([^"']+)["']/i);
+    const isExternal = /^https?:\/\//i.test(href);
+    if (isExternal) totalExternal++; else totalInternal++;
+    const effectiveText = text || (ariaLabelM ? ariaLabelM[1] : '');
+    const generic = effectiveText && /^(click here|read more|learn more|know more|more|details|explore all|view all|see more|here)$/i.test(effectiveText.trim());
+    if (generic) genericLinks.push({ text: effectiveText, href });
+    allLinks.push({ text: effectiveText, href });
+  }
+  a.links = { totalInternal, totalExternal };
+  a.genericLinks = genericLinks.slice(0, 20);
+
+  // 11. Interactive element types (for prompt context)
+  const interactive = [];
+  if (forms.length) interactive.push('forms');
+  if (/role\s*=\s*["']dialog["']|role\s*=\s*["']alertdialog["']/i.test(html)) interactive.push('dialog');
+  if (/role\s*=\s*["']tablist["']/i.test(html)) interactive.push('tabs');
+  if (/role\s*=\s*["']menu["']|role\s*=\s*["']menubar["']/i.test(html)) interactive.push('menu');
+  if (/role\s*=\s*["']combobox["']/i.test(html)) interactive.push('combobox');
+  if (/role\s*=\s*["']listbox["']/i.test(html)) interactive.push('listbox');
+  if (/\baria-expanded\b/i.test(html)) interactive.push('disclosure/accordion');
+  if (/<video\b|<audio\b/i.test(html)) interactive.push('media');
+  if (/<iframe\b/i.test(html)) interactive.push('iframe');
+  a.interactive = interactive;
+
+  // 12. ARIA attribute tally (useful for spotting misuse patterns)
+  a.ariaTally = {
+    hidden: (html.match(/\baria-hidden\s*=\s*["']true["']/gi) || []).length,
+    label: (html.match(/\baria-label\s*=/gi) || []).length,
+    labelledby: (html.match(/\baria-labelledby\s*=/gi) || []).length,
+    describedby: (html.match(/\baria-describedby\s*=/gi) || []).length,
+    live: (html.match(/\baria-live\s*=/gi) || []).length,
+    expanded: (html.match(/\baria-expanded\s*=/gi) || []).length,
+    current: (html.match(/\baria-current\s*=/gi) || []).length,
+    role: (html.match(/\brole\s*=/gi) || []).length,
+    tabindex: (html.match(/\btabindex\s*=/gi) || []).length,
+    tabindexPositive: (html.match(/\btabindex\s*=\s*["'](?:[1-9]|[1-9]\d+)["']/gi) || []).length,
+  };
+
+  // 13. Focus-suppression heuristic (very rough — checks inline style)
+  a.outlineSuppressed = /outline\s*:\s*(?:none|0)/i.test(html);
+
+  // 14. Autoplay media
+  a.autoplayMedia = /<(?:video|audio)\b[^>]*\bautoplay\b/i.test(html);
+
+  return a;
+}
+
 async function fetchText(url, timeoutMs = 8000, accept = 'text/html,application/xhtml+xml,application/xml,text/xml') {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
@@ -344,6 +589,12 @@ exports.crawlSite = async (req, res) => {
       addCandidate(current, 'bfs', depth);
       const existing = byUrl.get(current.split('#')[0]);
       if (existing && !existing.title) existing.title = title;
+      // FIX-4: attach rich a11y pageAnalysis so the QA Agent prompt sees
+      // real DOM (alts, landmarks, form labels, lang, headings, etc.) and
+      // can generate site-specific WCAG 2.2 test cases.
+      if (existing && !existing.pageAnalysis) {
+        try { existing.pageAnalysis = buildPageAnalysis(html); } catch (_) { /* ignore parse errors */ }
+      }
 
       // Strategy 3: __NEXT_DATA__ route extraction (runs on every HTML page)
       const nextRoutes = extractNextDataRoutes(html, origin);
