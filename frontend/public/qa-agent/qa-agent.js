@@ -912,13 +912,10 @@ let QA_ARCHITECT_SYSTEM=[
 ].join('\n');
 
 // Load the full UltraThink skill and any feature-specific checklists from
-// the Skills/ folder. The main skill is the core prompt; additional
-// checklists (contact form, checkout, login, etc.) are appended and self-
-// gate via their own "Applicability" sections. Drop a new .md file into
-// Skills/ and add its path here to extend agent coverage.
+// the Skills/ folder.
 const SKILL_FILES=[
-  './Skills/ultrathink-qa-architect.md',      // core skill — always applied
-  './Skills/checklist-contact-form.md',       // applies when contact/enquiry form detected
+  './Skills/ultrathink-qa-architect.md',
+  './Skills/checklist-contact-form.md',
 ];
 (async function loadQAArchitectSkill(){
   try{
@@ -929,18 +926,16 @@ const SKILL_FILES=[
         if(!resp.ok)continue;
         const text=await resp.text();
         if(text && text.length>100)parts.push(text);
-      }catch(_){ /* skip this file */ }
+      }catch(_){}
     }
     if(parts.length){
       QA_ARCHITECT_SYSTEM=parts.join('\n\n---\n\n');
       try{console.log('[QA Agent] Loaded '+parts.length+' skill file(s), '+QA_ARCHITECT_SYSTEM.length+' chars');}catch(_){}
     }
-  }catch(_){ /* keep compact fallback */ }
+  }catch(_){}
 })();
 
 // ── THROTTLE HELPER (prevents main-thread blocking during streaming) ────────
-// Returns a wrapper that calls `fn` at most once every `ms` milliseconds.
-// The last call is always delivered (trailing edge) so final state is correct.
 function _throttle(fn, ms){
   let last=0, timer=null;
   return function(){
