@@ -1,0 +1,29 @@
+# Dependencies
+node_modules/
+
+# SQLite runtime database
+backend/qa_nexus.db
+backend/qa_nexus.db-journal
+backend/qa_nexus.db-shm
+backend/qa_nexus.db-wal
+
+# Vite build cache
+frontend/node_modules/.vite/
+frontend/dist/
+
+# Env files
+.env
+.env.local
+*.env
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/

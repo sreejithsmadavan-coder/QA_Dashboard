@@ -222,10 +222,22 @@ db.sequelize.sync().then(async () => {
   } catch (e) {}
   console.log('✓ Integration webhooks table migrated');
 
-  // Migrate: add clientId column to qa_agent_runs
-  try {
-    await db.sequelize.query(`IF COL_LENGTH('qa_agent_runs', 'clientId') IS NULL ALTER TABLE qa_agent_runs ADD [clientId] NVARCHAR(255) NULL;`);
-  } catch (e) {}
+  // Migrate: add clientId column to qa_agent_runs (dialect-aware)
+  const qaDialect = db.sequelize.getDialect();
+  if (qaDialect === 'mssql') {
+    try {
+      await db.sequelize.query(`IF COL_LENGTH('qa_agent_runs', 'clientId') IS NULL ALTER TABLE qa_agent_runs ADD [clientId] NVARCHAR(255) NULL;`);
+    } catch (e) {}
+  } else if (qaDialect === 'sqlite') {
+    try {
+      const cols = await db.sequelize.query(`PRAGMA table_info(qa_agent_runs);`, { type: db.sequelize.QueryTypes.SELECT });
+      if (!cols.map(c => c.name).includes('clientId')) {
+        await db.sequelize.query(`ALTER TABLE qa_agent_runs ADD COLUMN clientId TEXT;`);
+      }
+    } catch (e) {}
+  } else if (qaDialect === 'postgres') {
+    try { await db.sequelize.query(`ALTER TABLE qa_agent_runs ADD COLUMN IF NOT EXISTS "clientId" VARCHAR(255);`); } catch (e) {}
+  }
 
   // Performance: add indexes on foreign keys
   const indexes = [
