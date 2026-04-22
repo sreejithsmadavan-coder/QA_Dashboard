@@ -1421,14 +1421,15 @@ let _logFixHandlers={};
 function escHtml(s){return String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}
 function humanizeLogError(msg){
   const m=String(msg||'').toLowerCase();
-  if(m.includes('api key')||m.includes('unauthorized')||m.includes('401'))return'Your API key is missing or invalid. Verify your key in the sidebar and try again.';
+  if(m.includes('402')||m.includes('requires more credits')||m.includes('can only afford')||m.includes('quota')||m.includes('insufficient')||m.includes('payment required'))return'Your provider account is out of credits (or the requested max_tokens exceeds what the balance covers). Top up credits, lower max_tokens, or switch model/provider.';
   if(m.includes('rate limit')||m.includes('429'))return'The AI provider is rate-limiting requests. Wait a moment and retry — no changes needed.';
+  if(m.includes('unauthorized')||m.includes('401')||m.includes('invalid api key')||m.includes('missing api key'))return'Your API key is missing or invalid. Verify your key in the sidebar and try again.';
   if(m.includes('timeout')||m.includes('timed out'))return'The request took too long to respond. Your network may be slow — retry when connectivity stabilises.';
   if(m.includes('network')||m.includes('failed to fetch')||m.includes('networkerror'))return'Could not reach the server. Check your internet connection and retry.';
   if(m.includes('json')||m.includes('unexpected token')||m.includes('parse'))return'The AI response was not valid JSON. This is usually a transient issue — retry the step.';
   if(m.includes('cors'))return'A cross-origin request was blocked by the browser. This usually means the target service needs to allow our origin.';
   if(m.includes('abort'))return'The operation was cancelled before it could finish. You can resume when ready.';
-  if(m.includes('quota')||m.includes('insufficient'))return'The account quota or credits are exhausted. Top up or switch the provider to continue.';
+  if(m.includes('api key'))return'Your API key is missing or invalid. Verify your key in the sidebar and try again.';
   return'Something went wrong while running this step. Retrying usually resolves transient failures.';
 }
 function log(msg,t='info',opts){
@@ -2620,29 +2621,16 @@ async function startQA(resume=false){
     }
   }
 
-  // FIX-8: Dry-run preview — estimate pages, test cases, cost before committing
+  // FIX-8: Dry-run preview — confirm pages + categories before committing
   if(!resume){
-    const pageCount=(S.crawledPages||[]).length;
-    const estTcsPerCat=pageCount>=10?8:(pageCount>=5?6:5);
-    const estTotal=S.cats.length*estTcsPerCat*Math.max(1,Math.ceil(pageCount/8));
-    const prov=getProvider();
-    // Rough token estimate: each batch is ~6k tokens in, ~3k tokens out = ~9k total
-    // Per batch: prompt ~5000 tokens, completion ~3000 tokens. 16k max_tokens hard cap.
-    const batchesPerCat=Math.max(1,Math.ceil(pageCount/(S.cats.indexOf('A11Y')>-1?3:8)));
-    const totalBatches=S.cats.length*batchesPerCat;
-    const estInputTokens=totalBatches*5000;
-    const estOutputTokens=totalBatches*3000;
+    const pageCount=(scannedPages&&scannedPages.length)||(S.crawledPages||[]).length;
+    const catLabels=S.cats.map(function(c){return (CAT_DEFS[c]&&CAT_DEFS[c].label)||c;});
     const previewLines=[
       'Pages crawled: '+pageCount,
-      'Categories selected: '+S.cats.join(', '),
-      'Estimated test cases: ~'+estTotal,
-      'Batches to run: '+totalBatches+' ('+batchesPerCat+' per category)',
-      'Provider/model: '+(prov.name||'')+' / '+(prov.model||''),
-      'Estimated tokens: ~'+Math.round(estInputTokens/1000)+'k in, ~'+Math.round(estOutputTokens/1000)+'k out',
-      S.cats.indexOf('A11Y')>-1?'A11Y pipeline: full WCAG 2.2 AA + AAA + APG + COGA + 10-layer automation':'',
-    ].filter(Boolean);
+      'Categories selected: '+catLabels.join(', '),
+    ];
     const proceed=await new Promise(function(res){
-      showConfirm('Ready to start?\n\n'+previewLines.join('\n')+'\n\nProceed with generation?',function(){res(true);});
+      showConfirm('Ready to start?\n\n'+previewLines.join('\n')+'\n\nProceed with testcase generation?',function(){res(true);});
       const cancelBtn=document.getElementById('confirmOverlay').querySelector('.close,[onclick*="closeConfirm"]');
       if(cancelBtn){const orig=cancelBtn.onclick;cancelBtn.onclick=function(e){if(orig)orig.call(cancelBtn,e);res(false);};}
     });
@@ -2850,7 +2838,7 @@ async function startQA(resume=false){
         // Fail the step loudly if every batch errored — otherwise the step
         // would silently finish as "done ✓" with zero test cases.
         if(!qaAborted && batchSuccesses===0 && batches.length>0){
-          throw new Error('All '+batches.length+' batch(es) failed'+(lastBatchErr?' — last error: '+lastBatchErr.message:'')+'. Check your API key / provider / rate limits.');
+          throw new Error('All '+batches.length+' batch(es) failed'+(lastBatchErr?' — last error: '+lastBatchErr.message:'')+'. Check provider credits, max_tokens limit, and rate limits.');
         }
       }else{
         // Throttle UI updates to max 2/sec to prevent main-thread blocking
@@ -3231,6 +3219,18 @@ async function generateAutomationScript(){
   if(!getApiKey()){showToast('Verify your API key first.','warn');return;}
 
   const tool=AUTO_TOOLS.find(t=>t.id===selectedAutoTool)||AUTO_TOOLS[0];
+
+  const previewLines=[
+    'Total test cases: '+allTCRows.length,
+    'Selected method: '+tool.label,
+  ];
+  const proceed=await new Promise(function(res){
+    showConfirm('Ready to start?\n\n'+previewLines.join('\n')+'\n\nProceed with automation script generation?',function(){res(true);});
+    const cancelBtn=document.getElementById('confirmOverlay').querySelector('.close,[onclick*="closeConfirm"]');
+    if(cancelBtn){const orig=cancelBtn.onclick;cancelBtn.onclick=function(e){if(orig)orig.call(cancelBtn,e);res(false);};}
+  });
+  if(!proceed){log('Automation script generation cancelled from preview.','warn');return;}
+
   S.automationTool=tool.id;
   updateAutoToolLabel();
   isRunning=true;postRunState(true);

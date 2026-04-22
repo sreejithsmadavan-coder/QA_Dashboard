@@ -355,7 +355,7 @@
 .qa-agent .confirm-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:2001;align-items:center;justify-content:center}
 .qa-agent .confirm-overlay.show{display:flex}
 .qa-agent .confirm-box{background:var(--surface);border:1px solid var(--border);border-radius:8px;padding:20px 24px;max-width:400px;width:90%;text-align:center}
-.qa-agent .confirm-msg{font-family:var(--mono);font-size:12px;color:var(--text);margin-bottom:16px;line-height:1.6}
+.qa-agent .confirm-msg{font-family:var(--mono);font-size:12px;color:var(--text);margin-bottom:16px;line-height:1.6;white-space:pre-line;text-align:left}
 .qa-agent .confirm-actions{display:flex;gap:8px;justify-content:center}
 .qa-agent .confirm-btn{font-family:var(--mono);font-size:11px;padding:7px 18px;border-radius:4px;cursor:pointer;transition:all .15s;border:1px solid var(--border);background:var(--surface2);color:var(--text)}
 .qa-agent .confirm-btn:hover{border-color:var(--accent);color:var(--accent)}
